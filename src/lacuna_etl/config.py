@@ -18,6 +18,19 @@ def get_data_root() -> Path:
     )
 
 
+def get_output_root() -> Path:
+    if env := os.environ.get("ETL_OUTPUT_ROOT"):
+        return Path(env)
+    if _CONFIG_PATH.exists():
+        with open(_CONFIG_PATH, "rb") as f:
+            cfg = tomllib.load(f)
+        if path := cfg.get("output_root"):
+            return Path(path)
+    raise RuntimeError(
+        "Output root not configured. Set ETL_OUTPUT_ROOT or run: etl configure <data-path> --output-root <path>"
+    )
+
+
 def get_intermediate_root() -> Path:
     if env := os.environ.get("ETL_INTERMEDIATE_ROOT"):
         return Path(env)
@@ -29,9 +42,15 @@ def get_intermediate_root() -> Path:
     return Path(__file__).parents[3] / "intermediate"
 
 
-def save_config(data_root: Path, intermediate_root: Path | None = None) -> None:
+def save_config(
+    data_root: Path,
+    output_root: Path | None = None,
+    intermediate_root: Path | None = None,
+) -> None:
     _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     lines = [f'data_root = "{data_root}"']
+    if output_root:
+        lines.append(f'output_root = "{output_root}"')
     if intermediate_root:
         lines.append(f'intermediate_root = "{intermediate_root}"')
     _CONFIG_PATH.write_text("\n".join(lines) + "\n")
