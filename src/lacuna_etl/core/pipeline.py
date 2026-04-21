@@ -40,19 +40,14 @@ class DatasetPipeline(ABC):
             spec.validate(df[col])
         return df
 
+    def load_parquet(self, path: Path) -> pd.DataFrame:
+        return pq.read_table(path).to_pandas()
+
     def save_parquet(self, df: pd.DataFrame, path: Path) -> None:
-        table = pa.Table.from_pandas(df, preserve_index=False)
-        pq.write_table(table, path)
+        pq.write_table(pa.Table.from_pandas(df, preserve_index=False), path, compression="snappy")
 
     def save_schema_yaml(self, schema: dict[str, ColumnSpec], stem: str) -> None:
-        data = {}
-        for col, spec in schema.items():
-            entry: dict[str, str] = {}
-            if spec.identifier is not None:
-                entry["identifier_type"] = spec.identifier.__name__
-            if spec.description:
-                entry["description"] = spec.description
-            data[col] = entry
+        data = {col: spec.yaml_entry() for col, spec in schema.items()}
         path = self.output_path() / f"{stem}.yml"
         path.write_text(yaml.dump(data, sort_keys=False, allow_unicode=True))
 
