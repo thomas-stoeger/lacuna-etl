@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class ColumnSpec:
     identifier: type[Identifier] | None = None
     description: str = ""
+    allowed_values: set[str] | None = None
 
     def cast(self, s: pd.Series) -> pd.Series:
         if self.identifier is not None:
@@ -22,11 +23,17 @@ class ColumnSpec:
     def validate(self, s: pd.Series) -> None:
         if self.identifier is not None:
             self.identifier.validate(s)
+        if self.allowed_values is not None:
+            unexpected = set(s.dropna().unique()) - self.allowed_values
+            if unexpected:
+                raise ValueError(f"{s.name}: unexpected values {unexpected}, allowed: {self.allowed_values}")
 
-    def parquet_field_metadata(self) -> dict[bytes, bytes]:
-        meta: dict[bytes, bytes] = {}
+    def yaml_entry(self) -> dict[str, str]:
+        entry: dict[str, str] = {}
         if self.identifier is not None:
-            meta[b"identifier_type"] = self.identifier.__name__.encode()
+            entry["identifier_type"] = self.identifier.__name__
         if self.description:
-            meta[b"description"] = self.description.encode()
-        return meta
+            entry["description"] = self.description
+        if self.allowed_values is not None:
+            entry["allowed_values"] = ", ".join(sorted(self.allowed_values))
+        return entry
