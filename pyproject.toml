@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lacuna-etl"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "typer>=0.12",
+    "tqdm>=4.66",
+]
+
+[project.scripts]
+etl = "lacuna_etl.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
