@@ -24,10 +24,10 @@ class NcbiGene2Pubmed(DatasetPipeline):
         self.save_parquet(df, self.intermediate_path() / "gene2pubmed.parquet")
 
     def transform(self) -> None:
-        df = pd.read_parquet(self.intermediate_path() / "gene2pubmed.parquet")
+        df = self.load_parquet(self.intermediate_path() / "gene2pubmed.parquet")
         self.save_parquet(df, self.intermediate_path() / "gene2pubmed_transformed.parquet")
 
     def load(self) -> None:
-        df = pd.read_parquet(self.intermediate_path() / "gene2pubmed_transformed.parquet")
+        df = self.load_parquet(self.intermediate_path() / "gene2pubmed_transformed.parquet")
         self.save_parquet(df, self.output_path() / "gene2pubmed.parquet")
         self.save_schema_yaml(SCHEMA, "gene2pubmed")
