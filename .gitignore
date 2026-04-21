@@ -208,3 +208,9 @@ __marimo__/
 
 # Intermediate ETL files (keep locally during dev, never commit)
 intermediate/
+
+# Scratch space for exploration
+scratch/
+
+# Scratch virtual environment
+.venv-scratch/
