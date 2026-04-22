@@ -1,4 +1,8 @@
+import re
+
 import pandas as pd
+
+_DOI_URL_PREFIX = re.compile(r"^https?://(?:doi\.org/)?")
 
 
 class Identifier:
@@ -36,3 +40,20 @@ class NcbiGeneId(NumericIdentifier):
 
 class PubmedId(NumericIdentifier):
     pass
+
+
+class Doi(Identifier):
+    dtype = pd.StringDtype()
+
+    @classmethod
+    def cast(cls, s: pd.Series) -> pd.Series:
+        s = s.astype(cls.dtype)
+        s = s.str.replace(_DOI_URL_PREFIX, "", regex=True)
+        return s
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[non_null.str.startswith(("http://", "https://"))]
+        if not bad.empty:
+            raise ValueError(f"Doi: URL prefix not stripped from {bad.head(5).tolist()}")
