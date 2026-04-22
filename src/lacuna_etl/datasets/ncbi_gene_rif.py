@@ -3,6 +3,7 @@ import pandas as pd
 from lacuna_etl.core.identifiers import NcbiGeneId, NcbiTaxId, PubmedId
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
+from lacuna_etl.datasets.ncbi_gene_history import update_entrez_ids
 from lacuna_etl.datasets.registry import register
 
 _EXTRACT_SCHEMA = {
@@ -33,6 +34,7 @@ _RENAME = {
 @register
 class NcbiGeneRif(DatasetPipeline):
     name = "ncbi_generifs"
+    depends_on = ["ncbi_gene_history"]
 
     def extract(self) -> None:
         src = self.raw_path() / "generifs_basic.gz"
@@ -46,6 +48,8 @@ class NcbiGeneRif(DatasetPipeline):
         df = self.load_parquet(self.intermediate_path() / "gene_rif.parquet")
         df["pubmed_ids"] = df["pubmed_ids"].str.split(r"[|,]")
         df = df.explode("pubmed_ids").rename(columns={"pubmed_ids": "pubmed_id"})
+        df["entrez_id"] = update_entrez_ids(df["entrez_id"])
+        NcbiGeneId.validate(df["entrez_id"])
         df["pubmed_id"] = PubmedId.cast(df["pubmed_id"])
         PubmedId.validate(df["pubmed_id"])
         self.save_parquet(df, self.intermediate_path() / "gene_rif_transformed.parquet")

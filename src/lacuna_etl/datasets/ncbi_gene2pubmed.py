@@ -3,6 +3,7 @@ import pandas as pd
 from lacuna_etl.core.identifiers import NcbiGeneId, NcbiTaxId, PubmedId
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
+from lacuna_etl.datasets.ncbi_gene_history import update_entrez_ids
 from lacuna_etl.datasets.registry import register
 
 SCHEMA = {
@@ -15,6 +16,7 @@ SCHEMA = {
 @register
 class NcbiGene2Pubmed(DatasetPipeline):
     name = "ncbi_gene2pubmed"
+    depends_on = ["ncbi_gene_history"]
 
     def extract(self) -> None:
         src = self.raw_path() / "gene2pubmed.gz"
@@ -25,6 +27,8 @@ class NcbiGene2Pubmed(DatasetPipeline):
 
     def transform(self) -> None:
         df = self.load_parquet(self.intermediate_path() / "gene2pubmed.parquet")
+        df["entrez_id"] = update_entrez_ids(df["entrez_id"])
+        NcbiGeneId.validate(df["entrez_id"])
         self.save_parquet(df, self.intermediate_path() / "gene2pubmed_transformed.parquet")
 
     def load(self) -> None:

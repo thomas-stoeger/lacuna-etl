@@ -1,5 +1,7 @@
 import pandas as pd
+import pyarrow.parquet as pq
 
+from lacuna_etl.config import get_output_root
 from lacuna_etl.core.identifiers import NcbiGeneId, NcbiTaxId
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
@@ -20,6 +22,31 @@ SCHEMA = {
     "discontinued_symbol": ColumnSpec(description="Gene symbol used by the discontinued gene"),
     "discontinue_date": ColumnSpec(description="Date the gene ID was discontinued"),
 }
+
+
+def update_entrez_ids(s: pd.Series) -> pd.Series:
+    """Replace discontinued Entrez Gene IDs with their current replacements.
+
+    Raises if any IDs are discontinued without a replacement (true deletion).
+    Requires ncbi_gene_history to have been run first.
+    """
+    df = pq.read_table(
+        str(get_output_root() / "ncbi_gene_history" / "gene_history.parquet"),
+        columns=["gene_id", "discontinued_gene_id"],
+    ).to_pandas()
+
+    mapping = df.dropna(subset=["gene_id"]).set_index("discontinued_gene_id")["gene_id"]
+    discontinued_no_replacement = set(df.loc[df["gene_id"].isna(), "discontinued_gene_id"])
+
+    bad = s[s.isin(discontinued_no_replacement)]
+    if not bad.empty:
+        raise ValueError(f"Entrez Gene IDs discontinued without replacement: {bad.unique()[:10].tolist()}")
+
+    in_mapping = s.isin(mapping.index)
+    if in_mapping.any():
+        s = s.copy()
+        s[in_mapping] = s[in_mapping].map(mapping)
+    return s
 
 
 @register
