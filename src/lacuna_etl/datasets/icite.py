@@ -1,6 +1,10 @@
+import shutil
 import zipfile
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.csv as pa_csv
+import pyarrow.parquet as pq
 
 from lacuna_etl.core.identifiers import Doi, PubmedId
 from lacuna_etl.core.pipeline import DatasetPipeline
@@ -49,12 +53,29 @@ SCHEMA = {
     "last_modified": ColumnSpec(description="Date citation metrics were last updated"),
 }
 
+OPEN_CITATION_SCHEMA = {
+    "citing": ColumnSpec(identifier=PubmedId, description="PubMed ID of the citing article"),
+    "referenced": ColumnSpec(identifier=PubmedId, description="PubMed ID of the referenced article"),
+}
+
 
 @register
 class ICite(DatasetPipeline):
     name = "icite"
 
     def extract(self) -> None:
+        self._extract_metadata()
+        self._extract_open_citation_collection()
+
+    def transform(self) -> None:
+        self._transform_metadata()
+        self._transform_open_citation_collection()
+
+    def load(self) -> None:
+        self._load_metadata()
+        self._load_open_citation_collection()
+
+    def _extract_metadata(self) -> None:
         src = self.raw_path() / "icite_metadata.zip"
         with zipfile.ZipFile(src) as z:
             with z.open("icite_metadata.csv") as f:
@@ -88,7 +109,20 @@ class ICite(DatasetPipeline):
 
         self.save_parquet(df, self.intermediate_path() / "icite.parquet")
 
-    def transform(self) -> None:
+    def _extract_open_citation_collection(self) -> None:
+        src = self.raw_path() / "open_citation_collection.zip"
+        out = self.intermediate_path() / "open_citation_collection.parquet"
+        convert_options = pa_csv.ConvertOptions(
+            column_types={"citing": pa.int64(), "referenced": pa.int64()},
+            strings_can_be_null=False,
+        )
+        with zipfile.ZipFile(src) as z, z.open("open_citation_collection.csv") as f:
+            reader = pa_csv.open_csv(f, convert_options=convert_options)
+            with pq.ParquetWriter(out, reader.schema, compression="snappy") as writer:
+                for batch in reader:
+                    writer.write_batch(batch)
+
+    def _transform_metadata(self) -> None:
         df = self.load_parquet(self.intermediate_path() / "icite.parquet")
 
         unexpected_cols = set(df.columns) - set(SCHEMA)
@@ -102,7 +136,28 @@ class ICite(DatasetPipeline):
         df = df[list(SCHEMA.keys())]
         self.save_parquet(df, self.intermediate_path() / "icite_transformed.parquet")
 
-    def load(self) -> None:
+    def _transform_open_citation_collection(self) -> None:
+        src = self.intermediate_path() / "open_citation_collection.parquet"
+        meta = pq.ParquetFile(src).metadata
+        col_indices = {meta.schema.column(i).name: i for i in range(meta.num_columns)}
+        for col in ("citing", "referenced"):
+            idx = col_indices[col]
+            for rg in range(meta.num_row_groups):
+                stats = meta.row_group(rg).column(idx).statistics
+                if stats is None or not stats.has_min_max:
+                    raise ValueError(f"open_citation_collection.{col}: missing parquet stats in row group {rg}")
+                if stats.null_count:
+                    raise ValueError(f"open_citation_collection.{col}: {stats.null_count} null PMIDs in row group {rg}")
+                if stats.min <= 0:
+                    raise ValueError(f"open_citation_collection.{col}: non-positive PMID {stats.min} in row group {rg}")
+
+    def _load_metadata(self) -> None:
         df = self.load_parquet(self.intermediate_path() / "icite_transformed.parquet")
         self.save_parquet(df, self.output_path() / "icite.parquet")
         self.save_schema_yaml(SCHEMA, "icite")
+
+    def _load_open_citation_collection(self) -> None:
+        src = self.intermediate_path() / "open_citation_collection.parquet"
+        dst = self.output_path() / "open_citation_collection.parquet"
+        shutil.copyfile(src, dst)
+        self.save_schema_yaml(OPEN_CITATION_SCHEMA, "open_citation_collection")
