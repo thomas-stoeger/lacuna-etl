@@ -12,6 +12,17 @@ OpenAlex IDs are stored in short form, e.g. "W2741809807" not the full URL.
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import (
+    AuthorId,
+    Doi,
+    DomainId,
+    FieldId,
+    SourceId,
+    SubfieldId,
+    TopicId,
+    WorkId,
+)
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id, short_pmid
 from lacuna_etl.datasets.registry import register
@@ -94,7 +105,7 @@ def _works_row(r: dict) -> dict:
 
     return {
         "work_id":              short_id(r.get("id")),
-        "doi":                  r.get("doi"),
+        "doi":                  Doi.shorten(r.get("doi")),
         "title":                r.get("title"),
         "publication_year":     r.get("publication_year"),
         "publication_date":     r.get("publication_date"),
@@ -196,9 +207,75 @@ def verify_batch(
     verify_works_batch(tables, gz_path, batch_idx)
 
 
+_WORKS_DOC = {
+    "work_id":                        ColumnSpec(identifier=WorkId,     required=True, description="OpenAlex work identifier"),
+    "doi":                            ColumnSpec(identifier=Doi,        description="DOI with the URL prefix stripped"),
+    "title":                          ColumnSpec(description="Work title"),
+    "publication_year":               ColumnSpec(description="Publication year"),
+    "publication_date":               ColumnSpec(description="Publication date (ISO 8601)"),
+    "type":                           ColumnSpec(description="Work type (article, dataset, dissertation, ...)"),
+    "language":                       ColumnSpec(description="ISO 639-1 language code of the work"),
+    "is_retracted":                   ColumnSpec(description="Whether the work has been retracted"),
+    "is_paratext":                    ColumnSpec(description="Whether OpenAlex flags the work as paratext (front-matter, indices, etc.)"),
+    "authors_count":                  ColumnSpec(description="Number of authors on this work"),
+    "cited_by_count":                 ColumnSpec(description="Number of works that cite this one"),
+    "referenced_works_count":         ColumnSpec(description="Number of works this one references"),
+    "fwci":                           ColumnSpec(description="Field-Weighted Citation Impact"),
+    "citation_normalized_percentile": ColumnSpec(description="Citation percentile normalized within the work's field/year"),
+    "is_oa":                          ColumnSpec(description="Whether the work is open-access at any location"),
+    "oa_status":                      ColumnSpec(description="Open-access status (closed, gold, hybrid, green, bronze, diamond)"),
+    "primary_source_id":              ColumnSpec(identifier=SourceId,   description="Primary publication source"),
+    "primary_source_type":            ColumnSpec(description="Type of the primary source (journal, repository, etc.)"),
+    "primary_location_is_oa":         ColumnSpec(description="Whether the primary location is open-access"),
+    "primary_topic_id":               ColumnSpec(identifier=TopicId,    description="Primary topic assigned by OpenAlex"),
+    "primary_subfield_id":            ColumnSpec(identifier=SubfieldId, description="Subfield of the primary topic"),
+    "primary_field_id":               ColumnSpec(identifier=FieldId,    description="Field of the primary topic"),
+    "primary_domain_id":              ColumnSpec(identifier=DomainId,   description="Domain of the primary topic"),
+    "volume":                         ColumnSpec(description="Bibliographic volume"),
+    "issue":                          ColumnSpec(description="Bibliographic issue"),
+    "first_page":                     ColumnSpec(description="First page (string; may be non-numeric)"),
+    "last_page":                      ColumnSpec(description="Last page (string; may be non-numeric)"),
+    "pmid":                           ColumnSpec(description="PubMed ID, as a numeric string (no URL prefix)"),
+    "pmcid":                          ColumnSpec(description="PubMed Central ID"),
+    "created_date":                   ColumnSpec(description="When OpenAlex created this record"),
+    "updated_date":                   ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+_AUTHORSHIPS_DOC = {
+    "work_id":          ColumnSpec(identifier=WorkId,   required=True, description="Work the authorship belongs to"),
+    "author_id":        ColumnSpec(identifier=AuthorId, description="Author (may be null for anonymous / unmatched authorships)"),
+    "author_position":  ColumnSpec(allowed_values={"first", "middle", "last"}, description="Position of the author in the byline"),
+    "is_corresponding": ColumnSpec(description="Whether this author is marked as corresponding"),
+    "institution_ids":  ColumnSpec(description="OpenAlex institution IDs the author was affiliated with for this work"),
+    "countries":        ColumnSpec(description="ISO alpha-2 country codes the authorship is associated with"),
+}
+
+_TOPICS_DOC = {
+    "work_id":     ColumnSpec(identifier=WorkId,     required=True, description="Work the topic is assigned to"),
+    "topic_id":    ColumnSpec(identifier=TopicId,    description="Topic assigned to the work"),
+    "score":       ColumnSpec(description="OpenAlex confidence score for the topic assignment"),
+    "subfield_id": ColumnSpec(identifier=SubfieldId, description="Subfield of the topic"),
+    "field_id":    ColumnSpec(identifier=FieldId,    description="Field of the topic"),
+    "domain_id":   ColumnSpec(identifier=DomainId,   description="Domain of the topic"),
+}
+
+_REFS_DOC = {
+    "work_id":     ColumnSpec(identifier=WorkId, required=True, description="Citing work"),
+    "ref_work_id": ColumnSpec(identifier=WorkId, required=True, description="Cited work"),
+}
+
+TABLES_DOC = {
+    "works":             _WORKS_DOC,
+    "works_authorships": _AUTHORSHIPS_DOC,
+    "works_topics":      _TOPICS_DOC,
+    "works_refs":        _REFS_DOC,
+}
+
+
 @register
 class OpenAlexWorks(OpenAlexEntityPipeline):
     name = "openalex_works"
     raw_dirname = "works"
     transform_module = "lacuna_etl.datasets.openalex.works"
     first_table = "works"
+    tables_doc = TABLES_DOC

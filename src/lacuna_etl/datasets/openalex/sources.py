@@ -8,6 +8,8 @@ Produces two tables per batch:
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import IssnL, SourceId, TopicId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -52,7 +54,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
         stats = r.get("summary_stats") or {}
         src_rows.append({
             "source_id":              src_id,
-            "issn_l":                 r.get("issn_l"),
+            "issn_l":                 IssnL.normalize(r.get("issn_l")),
             "display_name":           r.get("display_name"),
             "type":                   r.get("type"),
             "country_code":           r.get("country_code"),
@@ -87,9 +89,43 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     }
 
 
+_SOURCES_DOC = {
+    "source_id":              ColumnSpec(identifier=SourceId,    required=True, description="OpenAlex source identifier (journal, repository, conference, etc.)"),
+    "issn_l":                 ColumnSpec(identifier=IssnL,       description="Linking ISSN, if assigned"),
+    "display_name":           ColumnSpec(description="Source name"),
+    "type":                   ColumnSpec(description="Source type (journal / repository / ebook platform / book series / conference / other)"),
+    "country_code":           ColumnSpec(description="Country in which the source is published (typically ISO alpha-2; OpenAlex also emits some non-ISO 3-letter codes here)"),
+    "host_organization_id":   ColumnSpec(description="OpenAlex ID of the host organization (publisher or institution)"),
+    "host_organization_name": ColumnSpec(description="Display name of the host organization"),
+    "is_oa":                  ColumnSpec(description="Whether the source is fully open-access"),
+    "is_in_doaj":             ColumnSpec(description="Whether the source is listed in the Directory of Open Access Journals"),
+    "is_core":                ColumnSpec(description="Whether OpenAlex flags the source as core (fully indexed) vs auxiliary"),
+    "apc_usd":                ColumnSpec(description="Article processing charge in USD, if any"),
+    "works_count":            ColumnSpec(description="Number of works hosted at this source"),
+    "oa_works_count":         ColumnSpec(description="Number of open-access works hosted at this source"),
+    "cited_by_count":         ColumnSpec(description="Total citations received by works of this source"),
+    "h_index":                ColumnSpec(description="h-index of works hosted at this source"),
+    "i10_index":              ColumnSpec(description="i10-index of works hosted at this source"),
+    "2yr_mean_citedness":     ColumnSpec(description="Mean citedness of works in the past 2 years"),
+    "first_publication_year": ColumnSpec(description="Year of the source's earliest indexed publication"),
+    "last_publication_year":  ColumnSpec(description="Year of the source's most recent indexed publication"),
+    "created_date":           ColumnSpec(description="When OpenAlex created this record"),
+    "updated_date":           ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+_SOURCES_TOPICS_DOC = {
+    "source_id": ColumnSpec(identifier=SourceId, required=True, description="Source the topic count is attributed to"),
+    "topic_id":  ColumnSpec(identifier=TopicId,  required=True, description="Topic with non-zero presence in this source"),
+    "count":     ColumnSpec(description="Number of works on this topic at this source"),
+}
+
+TABLES_DOC = {"sources": _SOURCES_DOC, "sources_topics": _SOURCES_TOPICS_DOC}
+
+
 @register
 class OpenAlexSources(OpenAlexEntityPipeline):
     name = "openalex_sources"
     raw_dirname = "sources"
     transform_module = "lacuna_etl.datasets.openalex.sources"
     first_table = "sources"
+    tables_doc = TABLES_DOC

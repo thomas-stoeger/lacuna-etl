@@ -2,6 +2,8 @@
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import InstitutionTypeId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -31,9 +33,21 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"institution_types": pl.DataFrame(rows, schema=_INSTITUTION_TYPES_SCHEMA)}
 
 
+_INSTITUTION_TYPES_DOC = {
+    "institution_type_id": ColumnSpec(identifier=InstitutionTypeId, required=True, description="OpenAlex institution-type identifier"),
+    "display_name":        ColumnSpec(description="Human-readable type name"),
+    "works_count":         ColumnSpec(description="Number of works affiliated with institutions of this type"),
+    "cited_by_count":      ColumnSpec(description="Total citations to works affiliated with institutions of this type"),
+    "updated_date":        ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"institution_types": _INSTITUTION_TYPES_DOC}
+
+
 @register
 class OpenAlexInstitutionTypes(OpenAlexEntityPipeline):
     name = "openalex_institution_types"
     raw_dirname = "institution-types"
     transform_module = "lacuna_etl.datasets.openalex.institution_types"
     first_table = "institution_types"
+    tables_doc = TABLES_DOC

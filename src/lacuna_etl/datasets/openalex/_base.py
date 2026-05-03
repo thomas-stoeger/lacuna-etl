@@ -22,13 +22,25 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+import yaml
 from tqdm import tqdm
 
 from lacuna_etl.config import get_data_root
 from lacuna_etl.core.pipeline import DatasetPipeline
+from lacuna_etl.core.schema import ColumnSpec
 
 _DEFAULT_WORKERS = 2
 _DEFAULT_BATCH_SIZE = 50_000
+
+
+def _cleaned_expr(col: str, dtype):
+    """Polars expression that strips whitespace and maps empty-string -> null for string columns;
+    for non-string columns, returns the column unchanged."""
+    import polars as pl
+    if dtype == pl.String:
+        stripped = pl.col(col).str.strip_chars()
+        return pl.when(stripped == "").then(None).otherwise(stripped)
+    return pl.col(col)
 
 
 def _shard_name(gz_path: Path, batch_idx: int) -> str:
@@ -91,6 +103,7 @@ class OpenAlexEntityPipeline(DatasetPipeline):
     raw_dirname: str
     transform_module: str
     first_table: str
+    tables_doc: dict[str, dict[str, ColumnSpec]] = {}
 
     def raw_path(self) -> Path:
         root = get_data_root() / "openalex"
@@ -152,7 +165,89 @@ class OpenAlexEntityPipeline(DatasetPipeline):
         print(f"[{self.name}] {total_records:,} records in {elapsed:.1f}s ({rate:.0f} rec/s)")
 
     def transform(self) -> None:
-        pass
+        """Validate identifier columns across all written shards, processing one shard at a time.
+
+        For each table in `tables_doc`, iterates parquet shards individually so peak memory
+        is bounded by the largest single shard (~500 MB at our batch size), not by the whole
+        table. Per shard, only the columns under validation are read, then null- and
+        pattern-mismatch counts are accumulated. Raises on the first failing column with up
+        to 5 sample bad values from the shard where they first appeared.
+        """
+        import polars as pl
+        from tqdm import tqdm
+
+        out_dir = self.output_path()
+        if not self.tables_doc:
+            return
+
+        for table_name, doc in self.tables_doc.items():
+            table_dir = out_dir / table_name
+            shards = sorted(table_dir.glob("*.parquet")) if table_dir.exists() else []
+            if not shards:
+                print(f"[{self.name}] no shards for {table_name}; skipping validation")
+                continue
+
+            checks = [(c, spec) for c, spec in doc.items()
+                      if spec.identifier is not None or spec.allowed_values is not None or spec.required]
+            if not checks:
+                continue
+
+            schema = pl.scan_parquet(shards[0]).collect_schema()
+            checks = [(c, spec) for c, spec in checks if c in schema]
+            if not checks:
+                continue
+
+            check_cols = [c for c, _ in checks]
+            total_rows = 0
+            null_counts: dict[str, int] = {c: 0 for c in check_cols}
+            bad_counts:  dict[str, int] = {c: 0 for c, spec in checks
+                                            if spec.identifier is not None and spec.identifier.pattern is not None}
+            bad_samples: dict[str, list] = {}
+
+            for shard in tqdm(shards, desc=f"[{self.name}] validate {table_name}", unit="shard"):
+                df = pl.read_parquet(shard, columns=check_cols)
+                total_rows += df.height
+                for col, spec in checks:
+                    s = df[col]
+                    if s.dtype == pl.String:
+                        s = s.str.strip_chars()
+                        s = s.set(s == "", None)
+                    null_counts[col] += s.null_count()
+                    pattern = spec.identifier.pattern if spec.identifier is not None else None
+                    if pattern is None:
+                        continue
+                    non_null = s.drop_nulls()
+                    if non_null.len() == 0:
+                        continue
+                    bad_mask = ~non_null.str.contains(rf"^(?:{pattern})$")
+                    n_bad = int(bad_mask.sum())
+                    if n_bad:
+                        bad_counts[col] += n_bad
+                        if col not in bad_samples:
+                            bad_samples[col] = non_null.filter(bad_mask).head(5).to_list()
+                del df
+
+            for col, spec in checks:
+                if spec.required and null_counts[col] > 0:
+                    raise ValueError(
+                        f"[{self.name}/{table_name}] {col}: {null_counts[col]} nulls (required)"
+                    )
+            for col, n_bad in bad_counts.items():
+                if n_bad > 0:
+                    spec = dict(checks)[col]
+                    raise ValueError(
+                        f"[{self.name}/{table_name}] {col}: {n_bad} values not matching "
+                        f"r'{spec.identifier.pattern}' ({spec.identifier.__name__}), "
+                        f"e.g. {bad_samples.get(col)}"
+                    )
+
+            print(f"[{self.name}] validated {len(checks)} cols on {table_name} ({total_rows:,} rows)")
 
     def load(self) -> None:
-        pass
+        """Write per-table schema yaml files documenting columns and identifier types."""
+        out_dir = self.output_path()
+        for table_name, doc in self.tables_doc.items():
+            data = {col: spec.yaml_entry() for col, spec in doc.items()}
+            (out_dir / f"{table_name}.yml").write_text(
+                yaml.dump(data, sort_keys=False, allow_unicode=True)
+            )

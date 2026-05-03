@@ -8,6 +8,8 @@ Produces two tables per batch:
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import AuthorId, AwardId, FunderId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -89,9 +91,38 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     }
 
 
+_AWARDS_DOC = {
+    "award_id":             ColumnSpec(identifier=AwardId,  required=True, description="OpenAlex award identifier"),
+    "funder_award_id":      ColumnSpec(description="Funder-issued award identifier (e.g. NIH grant number)"),
+    "funder_id":            ColumnSpec(identifier=FunderId, description="Funder that issued the award"),
+    "funder_name":          ColumnSpec(description="Display name of the funder"),
+    "amount":               ColumnSpec(description="Award amount (numeric)"),
+    "currency":             ColumnSpec(description="ISO currency code for the award amount"),
+    "funding_type":         ColumnSpec(description="OpenAlex-classified funding type"),
+    "funder_scheme":        ColumnSpec(description="Funder-specific scheme or program name"),
+    "provenance":           ColumnSpec(description="Source from which OpenAlex ingested this award"),
+    "start_date":           ColumnSpec(description="Award start date"),
+    "end_date":             ColumnSpec(description="Award end date"),
+    "start_year":           ColumnSpec(description="Award start year"),
+    "end_year":             ColumnSpec(description="Award end year"),
+    "funded_outputs_count": ColumnSpec(description="Number of works linked to this award"),
+    "created_date":         ColumnSpec(description="When OpenAlex created this record"),
+    "updated_date":         ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+_INVESTIGATORS_DOC = {
+    "award_id":  ColumnSpec(identifier=AwardId,  required=True, description="Award the investigator is associated with"),
+    "author_id": ColumnSpec(identifier=AuthorId, required=True, description="Investigator (OpenAlex author)"),
+    "role":      ColumnSpec(allowed_values={"lead", "co_lead", "investigator"}, description="Investigator role"),
+}
+
+TABLES_DOC = {"awards": _AWARDS_DOC, "awards_investigators": _INVESTIGATORS_DOC}
+
+
 @register
 class OpenAlexAwards(OpenAlexEntityPipeline):
     name = "openalex_awards"
     raw_dirname = "awards"
     transform_module = "lacuna_etl.datasets.openalex.awards"
     first_table = "awards"
+    tables_doc = TABLES_DOC

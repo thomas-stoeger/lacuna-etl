@@ -2,6 +2,8 @@
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import LanguageId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -31,9 +33,21 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"languages": pl.DataFrame(rows, schema=_LANGUAGES_SCHEMA)}
 
 
+_LANGUAGES_DOC = {
+    "language_id":    ColumnSpec(identifier=LanguageId, required=True, description="OpenAlex language identifier (ISO 639-1 code)"),
+    "display_name":   ColumnSpec(description="Human-readable language name"),
+    "works_count":    ColumnSpec(description="Number of works in this language"),
+    "cited_by_count": ColumnSpec(description="Total citations to works in this language"),
+    "updated_date":   ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"languages": _LANGUAGES_DOC}
+
+
 @register
 class OpenAlexLanguages(OpenAlexEntityPipeline):
     name = "openalex_languages"
     raw_dirname = "languages"
     transform_module = "lacuna_etl.datasets.openalex.languages"
     first_table = "languages"
+    tables_doc = TABLES_DOC

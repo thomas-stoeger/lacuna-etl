@@ -9,6 +9,8 @@ Produces three tables per batch:
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import AuthorId, InstitutionId, Orcid, TopicId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id, short_orcid
 from lacuna_etl.datasets.registry import register
@@ -98,9 +100,42 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     }
 
 
+_AUTHORS_DOC = {
+    "author_id":          ColumnSpec(identifier=AuthorId, required=True, description="OpenAlex author identifier"),
+    "display_name":       ColumnSpec(description="Author name as it appears in OpenAlex"),
+    "orcid":              ColumnSpec(identifier=Orcid, description="ORCID iD, with the URL prefix stripped"),
+    "works_count":        ColumnSpec(description="Number of works attributed to this author"),
+    "cited_by_count":     ColumnSpec(description="Total citations received by this author's works"),
+    "h_index":            ColumnSpec(description="Author h-index"),
+    "i10_index":          ColumnSpec(description="Author i10-index"),
+    "2yr_mean_citedness": ColumnSpec(description="Mean citedness of works in the past 2 years"),
+    "created_date":       ColumnSpec(description="When OpenAlex created this record"),
+    "updated_date":       ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+_AFFILIATIONS_DOC = {
+    "author_id":      ColumnSpec(identifier=AuthorId,      required=True, description="Author whose affiliation is being described"),
+    "institution_id": ColumnSpec(identifier=InstitutionId, required=True, description="Institution the author was affiliated with"),
+    "years":          ColumnSpec(description="Years (list of int) during which the affiliation held"),
+}
+
+_AUTHOR_TOPICS_DOC = {
+    "author_id": ColumnSpec(identifier=AuthorId, required=True, description="Author the topic count is attributed to"),
+    "topic_id":  ColumnSpec(identifier=TopicId,  required=True, description="Topic with non-zero presence in the author's works"),
+    "count":     ColumnSpec(description="Number of the author's works on this topic"),
+}
+
+TABLES_DOC = {
+    "authors":              _AUTHORS_DOC,
+    "authors_affiliations": _AFFILIATIONS_DOC,
+    "authors_topics":       _AUTHOR_TOPICS_DOC,
+}
+
+
 @register
 class OpenAlexAuthors(OpenAlexEntityPipeline):
     name = "openalex_authors"
     raw_dirname = "authors"
     transform_module = "lacuna_etl.datasets.openalex.authors"
     first_table = "authors"
+    tables_doc = TABLES_DOC

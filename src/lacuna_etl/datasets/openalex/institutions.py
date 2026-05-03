@@ -9,6 +9,8 @@ Produces three tables per batch:
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import CountryCode, InstitutionId, RorId, TopicId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -94,9 +96,48 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     }
 
 
+_INSTITUTIONS_DOC = {
+    "institution_id":     ColumnSpec(identifier=InstitutionId, required=True, description="OpenAlex institution identifier"),
+    "ror":                ColumnSpec(identifier=RorId,         description="Research Organization Registry URL"),
+    "display_name":       ColumnSpec(description="Institution name"),
+    "country_code":       ColumnSpec(identifier=CountryCode,   description="Country (ISO alpha-2) where the institution is based"),
+    "type":               ColumnSpec(description="Institution type (education / facility / company / archive / nonprofit / government / healthcare / funder / other)"),
+    "is_super_system":    ColumnSpec(description="Whether the institution is a multi-campus system rather than a single site"),
+    "works_count":        ColumnSpec(description="Number of works affiliated with this institution"),
+    "cited_by_count":     ColumnSpec(description="Total citations received by works affiliated with this institution"),
+    "h_index":            ColumnSpec(description="h-index of works affiliated with this institution"),
+    "i10_index":          ColumnSpec(description="i10-index of works affiliated with this institution"),
+    "2yr_mean_citedness": ColumnSpec(description="Mean citedness of affiliated works in the past 2 years"),
+    "homepage_url":       ColumnSpec(description="Institution homepage URL"),
+    "latitude":           ColumnSpec(description="Geographic latitude of the institution"),
+    "longitude":          ColumnSpec(description="Geographic longitude of the institution"),
+    "created_date":       ColumnSpec(description="When OpenAlex created this record"),
+    "updated_date":       ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+_INSTITUTIONS_TOPICS_DOC = {
+    "institution_id": ColumnSpec(identifier=InstitutionId, required=True, description="Institution the topic count is attributed to"),
+    "topic_id":       ColumnSpec(identifier=TopicId,       required=True, description="Topic with non-zero presence at this institution"),
+    "count":          ColumnSpec(description="Number of works on this topic affiliated with this institution"),
+}
+
+_INSTITUTIONS_ASSOCIATED_DOC = {
+    "institution_id":            ColumnSpec(identifier=InstitutionId, required=True, description="Institution being described"),
+    "associated_institution_id": ColumnSpec(identifier=InstitutionId, required=True, description="Related institution"),
+    "relationship":              ColumnSpec(description="Relationship type (parent / child / related)"),
+}
+
+TABLES_DOC = {
+    "institutions":            _INSTITUTIONS_DOC,
+    "institutions_topics":     _INSTITUTIONS_TOPICS_DOC,
+    "institutions_associated": _INSTITUTIONS_ASSOCIATED_DOC,
+}
+
+
 @register
 class OpenAlexInstitutions(OpenAlexEntityPipeline):
     name = "openalex_institutions"
     raw_dirname = "institutions"
     transform_module = "lacuna_etl.datasets.openalex.institutions"
     first_table = "institutions"
+    tables_doc = TABLES_DOC

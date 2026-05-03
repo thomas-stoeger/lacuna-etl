@@ -12,6 +12,8 @@ Produces three tables per batch:
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import ConceptId, WikidataId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -52,7 +54,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
             "display_name":   r.get("display_name"),
             "level":          r.get("level"),
             "description":    r.get("description"),
-            "wikidata":       r.get("wikidata"),
+            "wikidata":       WikidataId.shorten(r.get("wikidata")),
             "works_count":    r.get("works_count"),
             "cited_by_count": r.get("cited_by_count"),
             "updated_date":   r.get("updated_date"),
@@ -81,9 +83,41 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     }
 
 
+_CONCEPTS_DOC = {
+    "concept_id":     ColumnSpec(identifier=ConceptId,  required=True, description="OpenAlex concept identifier (deprecated; superseded by topics/fields/subfields/domains)"),
+    "display_name":   ColumnSpec(description="Human-readable concept name"),
+    "level":          ColumnSpec(description="Depth in the concept hierarchy (0 = root)"),
+    "description":    ColumnSpec(description="Free-text description of the concept"),
+    "wikidata":       ColumnSpec(identifier=WikidataId, description="Wikidata Q-identifier for this concept"),
+    "works_count":    ColumnSpec(description="Number of works tagged to this concept"),
+    "cited_by_count": ColumnSpec(description="Total citations to works tagged to this concept"),
+    "updated_date":   ColumnSpec(description="Last time OpenAlex modified this record"),
+    "created_date":   ColumnSpec(description="When OpenAlex created this record"),
+}
+
+_CONCEPTS_ANCESTORS_DOC = {
+    "concept_id":     ColumnSpec(identifier=ConceptId, required=True, description="Concept whose ancestor is being described"),
+    "ancestor_id":    ColumnSpec(identifier=ConceptId, required=True, description="Ancestor concept"),
+    "ancestor_level": ColumnSpec(description="Depth of the ancestor in the concept hierarchy"),
+}
+
+_CONCEPTS_RELATED_DOC = {
+    "concept_id": ColumnSpec(identifier=ConceptId, required=True, description="Concept whose related concept is being described"),
+    "related_id": ColumnSpec(identifier=ConceptId, required=True, description="Related concept"),
+    "score":      ColumnSpec(description="Relatedness score assigned by OpenAlex"),
+}
+
+TABLES_DOC = {
+    "concepts":           _CONCEPTS_DOC,
+    "concepts_ancestors": _CONCEPTS_ANCESTORS_DOC,
+    "concepts_related":   _CONCEPTS_RELATED_DOC,
+}
+
+
 @register
 class OpenAlexConcepts(OpenAlexEntityPipeline):
     name = "openalex_concepts"
     raw_dirname = "concepts"
     transform_module = "lacuna_etl.datasets.openalex.concepts"
     first_table = "concepts"
+    tables_doc = TABLES_DOC

@@ -2,6 +2,8 @@
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import ContinentId, CountryCode, CountryCodeAlpha3, CountryId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -44,9 +46,27 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"countries": pl.DataFrame(rows, schema=_COUNTRIES_SCHEMA)}
 
 
+_COUNTRIES_DOC = {
+    "country_id":      ColumnSpec(identifier=CountryId,         required=True, description="OpenAlex country identifier"),
+    "country_code":    ColumnSpec(identifier=CountryCode,       description="ISO 3166-1 alpha-2 country code"),
+    "alpha_3":         ColumnSpec(identifier=CountryCodeAlpha3, description="ISO 3166-1 alpha-3 country code"),
+    "numeric":         ColumnSpec(description="ISO 3166-1 numeric country code"),
+    "display_name":    ColumnSpec(description="Common country name"),
+    "full_name":       ColumnSpec(description="Official country name"),
+    "continent_id":    ColumnSpec(identifier=ContinentId, description="Continent this country belongs to"),
+    "is_global_south": ColumnSpec(description="Whether OpenAlex classifies the country as Global South"),
+    "works_count":     ColumnSpec(description="Number of works affiliated with institutions in this country"),
+    "cited_by_count":  ColumnSpec(description="Total citations to works affiliated with institutions in this country"),
+    "updated_date":    ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"countries": _COUNTRIES_DOC}
+
+
 @register
 class OpenAlexCountries(OpenAlexEntityPipeline):
     name = "openalex_countries"
     raw_dirname = "countries"
     transform_module = "lacuna_etl.datasets.openalex.countries"
     first_table = "countries"
+    tables_doc = TABLES_DOC

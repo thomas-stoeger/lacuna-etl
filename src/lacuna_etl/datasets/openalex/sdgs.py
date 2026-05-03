@@ -2,6 +2,8 @@
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import SdgId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -33,9 +35,22 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"sdgs": pl.DataFrame(rows, schema=_SDGS_SCHEMA)}
 
 
+_SDGS_DOC = {
+    "sdg_id":         ColumnSpec(identifier=SdgId, required=True, description="UN Sustainable Development Goal identifier"),
+    "display_name":   ColumnSpec(description="Human-readable goal name"),
+    "description":    ColumnSpec(description="Free-text description of the goal"),
+    "works_count":    ColumnSpec(description="Number of works tagged to this SDG"),
+    "cited_by_count": ColumnSpec(description="Total citations to works tagged to this SDG"),
+    "updated_date":   ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"sdgs": _SDGS_DOC}
+
+
 @register
 class OpenAlexSdgs(OpenAlexEntityPipeline):
     name = "openalex_sdgs"
     raw_dirname = "sdgs"
     transform_module = "lacuna_etl.datasets.openalex.sdgs"
     first_table = "sdgs"
+    tables_doc = TABLES_DOC

@@ -7,6 +7,8 @@ Produces one table per batch:
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import CountryCode, FunderId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -53,9 +55,29 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"funders": pl.DataFrame(rows, schema=_FUNDERS_SCHEMA)}
 
 
+_FUNDERS_DOC = {
+    "funder_id":          ColumnSpec(identifier=FunderId,    required=True, description="OpenAlex funder identifier"),
+    "display_name":       ColumnSpec(description="Human-readable funder name"),
+    "country_code":       ColumnSpec(identifier=CountryCode, description="Funder country (ISO alpha-2)"),
+    "description":        ColumnSpec(description="Free-text description of the funder"),
+    "homepage_url":       ColumnSpec(description="Funder's homepage URL"),
+    "works_count":        ColumnSpec(description="Number of works funded"),
+    "cited_by_count":     ColumnSpec(description="Total citations received by funded works"),
+    "awards_count":       ColumnSpec(description="Number of awards from this funder"),
+    "h_index":            ColumnSpec(description="h-index of works funded"),
+    "i10_index":          ColumnSpec(description="i10-index of works funded"),
+    "2yr_mean_citedness": ColumnSpec(description="Mean citedness of works funded in the past 2 years"),
+    "created_date":       ColumnSpec(description="When OpenAlex created this record"),
+    "updated_date":       ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"funders": _FUNDERS_DOC}
+
+
 @register
 class OpenAlexFunders(OpenAlexEntityPipeline):
     name = "openalex_funders"
     raw_dirname = "funders"
     transform_module = "lacuna_etl.datasets.openalex.funders"
     first_table = "funders"
+    tables_doc = TABLES_DOC

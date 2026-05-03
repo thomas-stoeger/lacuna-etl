@@ -7,6 +7,8 @@ Produces one table per batch:
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import PublisherId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -52,9 +54,28 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"publishers": pl.DataFrame(rows, schema=_PUBLISHERS_SCHEMA)}
 
 
+_PUBLISHERS_DOC = {
+    "publisher_id":        ColumnSpec(identifier=PublisherId, required=True, description="OpenAlex publisher identifier"),
+    "display_name":        ColumnSpec(description="Human-readable publisher name"),
+    "country_codes":       ColumnSpec(description="ISO 3166-1 alpha-2 country codes where the publisher operates"),
+    "hierarchy_level":     ColumnSpec(description="Depth in the publisher hierarchy (0 = top-level)"),
+    "parent_publisher_id": ColumnSpec(identifier=PublisherId, description="Parent publisher, if any"),
+    "works_count":         ColumnSpec(description="Number of works released by this publisher"),
+    "cited_by_count":      ColumnSpec(description="Total citations received by works of this publisher"),
+    "h_index":             ColumnSpec(description="h-index of the publisher's works"),
+    "i10_index":           ColumnSpec(description="i10-index of the publisher's works"),
+    "2yr_mean_citedness":  ColumnSpec(description="Mean citedness of works released in the past 2 years"),
+    "created_date":        ColumnSpec(description="When OpenAlex created this record"),
+    "updated_date":        ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"publishers": _PUBLISHERS_DOC}
+
+
 @register
 class OpenAlexPublishers(OpenAlexEntityPipeline):
     name = "openalex_publishers"
     raw_dirname = "publishers"
     transform_module = "lacuna_etl.datasets.openalex.publishers"
     first_table = "publishers"
+    tables_doc = TABLES_DOC

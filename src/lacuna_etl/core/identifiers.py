@@ -1,12 +1,28 @@
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
+if TYPE_CHECKING:
+    import polars as pl
+
 _DOI_URL_PREFIX = re.compile(r"^https?://(?:doi\.org/)?")
+_WIKIDATA_URL_PREFIX = re.compile(r"^https?://(?:www\.)?wikidata\.org/(?:wiki|entity)/")
 
 
 class Identifier:
+    """Base class for column identifier types.
+
+    Subclasses declare:
+      dtype       - pandas dtype used by `cast` (for pandas-backed pipelines)
+      pattern     - regex (without anchors) describing valid string values; used
+                    by polars validation. None = no pattern check.
+    """
+
     dtype: object = None
+    pattern: str | None = None
 
     @classmethod
     def cast(cls, s: pd.Series) -> pd.Series:
@@ -15,6 +31,40 @@ class Identifier:
     @classmethod
     def validate(cls, s: pd.Series) -> None:  # noqa: ARG003
         pass
+
+    @classmethod
+    def validate_polars(cls, s: "pl.Series", *, required: bool = False) -> None:
+        """Validate a polars Series against this identifier's contract.
+
+        Empty strings are treated as null (a common OpenAlex convention).
+        - if `required` and there are nulls or empties -> ValueError
+        - if `pattern` is set, every non-null value must fully match -> ValueError
+        """
+        import polars as pl
+
+        if s.dtype == pl.String:
+            s = s.str.strip_chars()
+            s = s.set(s == "", None)
+
+        nulls = s.null_count()
+        if required and nulls > 0:
+            raise ValueError(f"{cls.__name__}: column {s.name!r} has {nulls} nulls (required)")
+
+        if cls.pattern is None:
+            return
+
+        non_null = s.drop_nulls()
+        if non_null.len() == 0:
+            return
+
+        bad_mask = ~non_null.str.contains(rf"^(?:{cls.pattern})$")
+        if bad_mask.any():
+            bad = non_null.filter(bad_mask)
+            sample = bad.head(5).to_list()
+            raise ValueError(
+                f"{cls.__name__}: column {s.name!r} has {bad.len()} values "
+                f"not matching r'{cls.pattern}', e.g. {sample}"
+            )
 
 
 class NumericIdentifier(Identifier):
@@ -44,6 +94,15 @@ class PubmedId(NumericIdentifier):
 
 class Doi(Identifier):
     dtype = pd.StringDtype()
+    pattern = r"10\.[^/\s]+/\S+"
+
+    @classmethod
+    def shorten(cls, value: str | None) -> str | None:
+        """Strip URL prefix and surrounding whitespace from a single DOI string. Empty input -> None."""
+        if value is None or not isinstance(value, str):
+            return value
+        stripped = _DOI_URL_PREFIX.sub("", value).strip()
+        return stripped or None
 
     @classmethod
     def cast(cls, s: pd.Series) -> pd.Series:
@@ -57,3 +116,209 @@ class Doi(Identifier):
         bad = non_null[non_null.str.startswith(("http://", "https://"))]
         if not bad.empty:
             raise ValueError(f"Doi: URL prefix not stripped from {bad.head(5).tolist()}")
+
+
+class WikidataId(Identifier):
+    """Wikidata Q-identifier, e.g. 'Q42'. URL forms are stripped via `shorten`."""
+    dtype = pd.StringDtype()
+    pattern = r"Q\d+"
+
+    @classmethod
+    def shorten(cls, value: str | None) -> str | None:
+        if value is None or not isinstance(value, str):
+            return value
+        return _WIKIDATA_URL_PREFIX.sub("", value)
+
+
+class Orcid(Identifier):
+    """ORCID iD in canonical hyphenated form, e.g. '0000-0002-1825-0097'.
+
+    `normalize` accepts any common variant (URL-prefixed, dashless, missing check digit)
+    and returns the canonical form, or None if the value is unrecoverable / fails its
+    ISO 7064 MOD 11-2 check digit.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"\d{4}-\d{4}-\d{4}-\d{3}[\dX]"
+
+    @staticmethod
+    def _checksum(fifteen_digits: str) -> str:
+        """Compute the ORCID check digit (ISO 7064 MOD 11-2) for the leading 15 digits."""
+        total = 0
+        for ch in fifteen_digits:
+            total = (total + int(ch)) * 2
+        result = (12 - total % 11) % 11
+        return "X" if result == 10 else str(result)
+
+    @classmethod
+    def normalize(cls, value: str | None) -> str | None:
+        """Normalize an ORCID-like value to canonical 'XXXX-XXXX-XXXX-XXXX' form.
+
+        Strips URL prefix and hyphens; if 15 digits, recovers the check digit; if 16
+        chars (15 digits + check digit/X), validates it. Returns None for malformed or
+        bad-checksum input.
+        """
+        if value is None or not isinstance(value, str):
+            return None
+        s = value.strip().removeprefix("https://orcid.org/").removeprefix("http://orcid.org/")
+        bare = s.replace("-", "")
+        if not bare:
+            return None
+        if len(bare) == 15 and bare.isdigit():
+            check = cls._checksum(bare)
+            full = bare + check
+        elif len(bare) == 16 and bare[:15].isdigit() and bare[15] in "0123456789X":
+            if cls._checksum(bare[:15]) != bare[15]:
+                return None
+            full = bare
+        else:
+            return None
+        return f"{full[0:4]}-{full[4:8]}-{full[8:12]}-{full[12:16]}"
+
+
+class RorId(Identifier):
+    """Research Organization Registry ID, canonical URL form, e.g. 'https://ror.org/01an7q238'."""
+    dtype = pd.StringDtype()
+    pattern = r"https://ror\.org/[a-z0-9]+"
+
+
+class IssnL(Identifier):
+    """Linking ISSN in canonical hyphenated form, e.g. '1234-567X'.
+
+    `normalize` accepts both hyphenated and hyphenless inputs, validates the ISO 7064
+    MOD 11-2 check digit, recovers it when missing (7-digit input), and returns the
+    canonical form or None if the value is unrecoverable / fails its checksum.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"\d{4}-\d{3}[\dX]"
+
+    @staticmethod
+    def _checksum(seven_digits: str) -> str:
+        """Compute the ISSN check digit (ISO 7064 MOD 11-2, weights 8,7,6,5,4,3,2)."""
+        total = sum(int(d) * w for d, w in zip(seven_digits, (8, 7, 6, 5, 4, 3, 2)))
+        rem = total % 11
+        check = (11 - rem) % 11
+        return "X" if check == 10 else str(check)
+
+    @classmethod
+    def normalize(cls, value: str | None) -> str | None:
+        """Normalize an ISSN-like value to canonical 'XXXX-XXXC' form."""
+        if value is None or not isinstance(value, str):
+            return None
+        bare = value.strip().replace("-", "")
+        if not bare:
+            return None
+        if len(bare) == 7 and bare.isdigit():
+            check = cls._checksum(bare)
+            full = bare + check
+        elif len(bare) == 8 and bare[:7].isdigit() and bare[7] in "0123456789X":
+            if cls._checksum(bare[:7]) != bare[7]:
+                return None
+            full = bare
+        else:
+            return None
+        return f"{full[0:4]}-{full[4:8]}"
+
+
+class CountryCode(Identifier):
+    """ISO 3166-1 alpha-2 country code, e.g. 'US'."""
+    dtype = pd.StringDtype()
+    pattern = r"[A-Z]{2}"
+
+
+class CountryCodeAlpha3(Identifier):
+    """ISO 3166-1 alpha-3 country code, e.g. 'USA'."""
+    dtype = pd.StringDtype()
+    pattern = r"[A-Z]{3}"
+
+
+# --- OpenAlex identifier types ---------------------------------------------
+
+class OpenAlexId(Identifier):
+    """Base for OpenAlex internal IDs. Subclasses set `pattern`."""
+    dtype = pd.StringDtype()
+
+
+class WorkId(OpenAlexId):
+    pattern = r"W\d+"
+
+
+class AuthorId(OpenAlexId):
+    pattern = r"A\d+"
+
+
+class InstitutionId(OpenAlexId):
+    pattern = r"I\d+"
+
+
+class SourceId(OpenAlexId):
+    pattern = r"S\d+"
+
+
+class FunderId(OpenAlexId):
+    pattern = r"F\d+"
+
+
+class PublisherId(OpenAlexId):
+    pattern = r"P\d+"
+
+
+class ConceptId(OpenAlexId):
+    pattern = r"C\d+"
+
+
+class TopicId(OpenAlexId):
+    pattern = r"T\d+"
+
+
+class AwardId(OpenAlexId):
+    pattern = r"G\d+"
+
+
+class DomainId(OpenAlexId):
+    pattern = r"domains/\d+"
+
+
+class FieldId(OpenAlexId):
+    pattern = r"fields/\d+"
+
+
+class SubfieldId(OpenAlexId):
+    pattern = r"subfields/\d+"
+
+
+class SdgId(OpenAlexId):
+    pattern = r"sdgs/\d+"
+
+
+class KeywordId(OpenAlexId):
+    # OpenAlex keyword slugs include unicode letters, dots, and unicode hyphens, so
+    # accept any non-whitespace tail.
+    pattern = r"keywords/\S+"
+
+
+class LanguageId(OpenAlexId):
+    pattern = r"languages/[a-z]{2,3}"
+
+
+class LicenseId(OpenAlexId):
+    pattern = r"licenses/[a-z0-9\-]+"
+
+
+class SourceTypeId(OpenAlexId):
+    pattern = r"source-types/[A-Za-z0-9 \-]+"
+
+
+class WorkTypeId(OpenAlexId):
+    pattern = r"types/[a-z0-9\-]+"
+
+
+class InstitutionTypeId(OpenAlexId):
+    pattern = r"institution-types/[a-z0-9\-]+"
+
+
+class ContinentId(OpenAlexId):
+    pattern = r"continents/Q\d+"
+
+
+class CountryId(OpenAlexId):
+    pattern = r"countries/[A-Z]{2}"

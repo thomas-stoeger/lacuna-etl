@@ -2,6 +2,8 @@
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import KeywordId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -31,9 +33,21 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"keywords": pl.DataFrame(rows, schema=_KEYWORDS_SCHEMA)}
 
 
+_KEYWORDS_DOC = {
+    "keyword_id":     ColumnSpec(identifier=KeywordId, required=True, description="OpenAlex keyword identifier"),
+    "display_name":   ColumnSpec(description="Human-readable keyword"),
+    "works_count":    ColumnSpec(description="Number of works tagged with this keyword"),
+    "cited_by_count": ColumnSpec(description="Total citations to works tagged with this keyword"),
+    "updated_date":   ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"keywords": _KEYWORDS_DOC}
+
+
 @register
 class OpenAlexKeywords(OpenAlexEntityPipeline):
     name = "openalex_keywords"
     raw_dirname = "keywords"
     transform_module = "lacuna_etl.datasets.openalex.keywords"
     first_table = "keywords"
+    tables_doc = TABLES_DOC

@@ -2,6 +2,8 @@
 
 import polars as pl
 
+from lacuna_etl.core.identifiers import DomainId, FieldId
+from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
 from lacuna_etl.datasets.registry import register
@@ -36,9 +38,23 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     return {"fields": pl.DataFrame(rows, schema=_FIELDS_SCHEMA)}
 
 
+_FIELDS_DOC = {
+    "field_id":       ColumnSpec(identifier=FieldId,  required=True, description="OpenAlex field identifier (second tier of the topic hierarchy)"),
+    "display_name":   ColumnSpec(description="Human-readable field name"),
+    "description":    ColumnSpec(description="Free-text description of the field"),
+    "domain_id":      ColumnSpec(identifier=DomainId, description="Parent domain"),
+    "works_count":    ColumnSpec(description="Number of works tagged to this field"),
+    "cited_by_count": ColumnSpec(description="Total citations received by works in this field"),
+    "updated_date":   ColumnSpec(description="Last time OpenAlex modified this record"),
+}
+
+TABLES_DOC = {"fields": _FIELDS_DOC}
+
+
 @register
 class OpenAlexFields(OpenAlexEntityPipeline):
     name = "openalex_fields"
     raw_dirname = "fields"
     transform_module = "lacuna_etl.datasets.openalex.fields"
     first_table = "fields"
+    tables_doc = TABLES_DOC
