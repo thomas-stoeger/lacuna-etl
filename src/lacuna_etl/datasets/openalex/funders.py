@@ -7,7 +7,7 @@ Produces one table per batch:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import CountryCode, FunderId
+from lacuna_etl.core.identifiers import CountryCode, OpenAlexFunderId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -56,7 +56,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _FUNDERS_DOC = {
-    "funder_id":          ColumnSpec(identifier=FunderId,    required=True, description="OpenAlex funder identifier"),
+    "funder_id":          ColumnSpec(identifier=OpenAlexFunderId,    required=True, description="OpenAlex funder identifier"),
     "display_name":       ColumnSpec(description="Human-readable funder name"),
     "country_code":       ColumnSpec(identifier=CountryCode, description="Funder country (ISO alpha-2)"),
     "description":        ColumnSpec(description="Free-text description of the funder"),

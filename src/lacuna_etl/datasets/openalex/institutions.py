@@ -9,7 +9,7 @@ Produces three tables per batch:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import CountryCode, InstitutionId, RorId, TopicId
+from lacuna_etl.core.identifiers import CountryCode, OpenAlexInstitutionId, RorId, OpenAlexTopicId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -97,7 +97,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _INSTITUTIONS_DOC = {
-    "institution_id":     ColumnSpec(identifier=InstitutionId, required=True, description="OpenAlex institution identifier"),
+    "institution_id":     ColumnSpec(identifier=OpenAlexInstitutionId, required=True, description="OpenAlex institution identifier"),
     "ror":                ColumnSpec(identifier=RorId,         description="Research Organization Registry URL"),
     "display_name":       ColumnSpec(description="Institution name"),
     "country_code":       ColumnSpec(identifier=CountryCode,   description="Country (ISO alpha-2) where the institution is based"),
@@ -116,14 +116,14 @@ _INSTITUTIONS_DOC = {
 }
 
 _INSTITUTIONS_TOPICS_DOC = {
-    "institution_id": ColumnSpec(identifier=InstitutionId, required=True, description="Institution the topic count is attributed to"),
-    "topic_id":       ColumnSpec(identifier=TopicId,       required=True, description="Topic with non-zero presence at this institution"),
+    "institution_id": ColumnSpec(identifier=OpenAlexInstitutionId, required=True, description="Institution the topic count is attributed to"),
+    "topic_id":       ColumnSpec(identifier=OpenAlexTopicId,       required=True, description="Topic with non-zero presence at this institution"),
     "count":          ColumnSpec(description="Number of works on this topic affiliated with this institution"),
 }
 
 _INSTITUTIONS_ASSOCIATED_DOC = {
-    "institution_id":            ColumnSpec(identifier=InstitutionId, required=True, description="Institution being described"),
-    "associated_institution_id": ColumnSpec(identifier=InstitutionId, required=True, description="Related institution"),
+    "institution_id":            ColumnSpec(identifier=OpenAlexInstitutionId, required=True, description="Institution being described"),
+    "associated_institution_id": ColumnSpec(identifier=OpenAlexInstitutionId, required=True, description="Related institution"),
     "relationship":              ColumnSpec(description="Relationship type (parent / child / related)"),
 }
 

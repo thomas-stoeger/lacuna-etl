@@ -7,7 +7,7 @@ Produces one table per batch:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import PublisherId
+from lacuna_etl.core.identifiers import OpenAlexPublisherId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -55,11 +55,11 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _PUBLISHERS_DOC = {
-    "publisher_id":        ColumnSpec(identifier=PublisherId, required=True, description="OpenAlex publisher identifier"),
+    "publisher_id":        ColumnSpec(identifier=OpenAlexPublisherId, required=True, description="OpenAlex publisher identifier"),
     "display_name":        ColumnSpec(description="Human-readable publisher name"),
     "country_codes":       ColumnSpec(description="ISO 3166-1 alpha-2 country codes where the publisher operates"),
     "hierarchy_level":     ColumnSpec(description="Depth in the publisher hierarchy (0 = top-level)"),
-    "parent_publisher_id": ColumnSpec(identifier=PublisherId, description="Parent publisher, if any"),
+    "parent_publisher_id": ColumnSpec(identifier=OpenAlexPublisherId, description="Parent publisher, if any"),
     "works_count":         ColumnSpec(description="Number of works released by this publisher"),
     "cited_by_count":      ColumnSpec(description="Total citations received by works of this publisher"),
     "h_index":             ColumnSpec(description="h-index of the publisher's works"),

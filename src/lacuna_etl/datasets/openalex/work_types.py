@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import WorkTypeId
+from lacuna_etl.core.identifiers import OpenAlexWorkTypeId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -36,7 +36,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _WORK_TYPES_DOC = {
-    "work_type_id":   ColumnSpec(identifier=WorkTypeId, required=True, description="OpenAlex work-type identifier (article, dataset, dissertation, etc.)"),
+    "work_type_id":   ColumnSpec(identifier=OpenAlexWorkTypeId, required=True, description="OpenAlex work-type identifier (article, dataset, dissertation, etc.)"),
     "display_name":   ColumnSpec(description="Human-readable type name"),
     "description":    ColumnSpec(description="Free-text description of the work type"),
     "works_count":    ColumnSpec(description="Number of works of this type"),

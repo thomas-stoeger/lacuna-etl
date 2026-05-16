@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import LicenseId
+from lacuna_etl.core.identifiers import OpenAlexLicenseId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -38,7 +38,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _LICENSES_DOC = {
-    "license_id":     ColumnSpec(identifier=LicenseId, required=True, description="OpenAlex license identifier"),
+    "license_id":     ColumnSpec(identifier=OpenAlexLicenseId, required=True, description="OpenAlex license identifier"),
     "display_name":   ColumnSpec(description="Human-readable license name"),
     "url":            ColumnSpec(description="Canonical URL describing the license terms"),
     "description":    ColumnSpec(description="Free-text description of the license"),

@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import SdgId
+from lacuna_etl.core.identifiers import OpenAlexSdgId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -36,7 +36,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _SDGS_DOC = {
-    "sdg_id":         ColumnSpec(identifier=SdgId, required=True, description="UN Sustainable Development Goal identifier"),
+    "sdg_id":         ColumnSpec(identifier=OpenAlexSdgId, required=True, description="UN Sustainable Development Goal identifier"),
     "display_name":   ColumnSpec(description="Human-readable goal name"),
     "description":    ColumnSpec(description="Free-text description of the goal"),
     "works_count":    ColumnSpec(description="Number of works tagged to this SDG"),

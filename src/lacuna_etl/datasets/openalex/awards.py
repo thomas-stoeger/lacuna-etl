@@ -8,7 +8,7 @@ Produces two tables per batch:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import AuthorId, AwardId, FunderId
+from lacuna_etl.core.identifiers import OpenAlexAuthorId, OpenAlexAwardId, OpenAlexFunderId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -92,9 +92,9 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _AWARDS_DOC = {
-    "award_id":             ColumnSpec(identifier=AwardId,  required=True, description="OpenAlex award identifier"),
+    "award_id":             ColumnSpec(identifier=OpenAlexAwardId,  required=True, description="OpenAlex award identifier"),
     "funder_award_id":      ColumnSpec(description="Funder-issued award identifier (e.g. NIH grant number)"),
-    "funder_id":            ColumnSpec(identifier=FunderId, description="Funder that issued the award"),
+    "funder_id":            ColumnSpec(identifier=OpenAlexFunderId, description="Funder that issued the award"),
     "funder_name":          ColumnSpec(description="Display name of the funder"),
     "amount":               ColumnSpec(description="Award amount (numeric)"),
     "currency":             ColumnSpec(description="ISO currency code for the award amount"),
@@ -111,8 +111,8 @@ _AWARDS_DOC = {
 }
 
 _INVESTIGATORS_DOC = {
-    "award_id":  ColumnSpec(identifier=AwardId,  required=True, description="Award the investigator is associated with"),
-    "author_id": ColumnSpec(identifier=AuthorId, required=True, description="Investigator (OpenAlex author)"),
+    "award_id":  ColumnSpec(identifier=OpenAlexAwardId,  required=True, description="Award the investigator is associated with"),
+    "author_id": ColumnSpec(identifier=OpenAlexAuthorId, required=True, description="Investigator (OpenAlex author)"),
     "role":      ColumnSpec(allowed_values={"lead", "co_lead", "investigator"}, description="Investigator role"),
 }
 

@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import DomainId
+from lacuna_etl.core.identifiers import OpenAlexDomainId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -36,7 +36,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _DOMAINS_DOC = {
-    "domain_id":      ColumnSpec(identifier=DomainId, required=True, description="OpenAlex domain identifier (top of the topic hierarchy)"),
+    "domain_id":      ColumnSpec(identifier=OpenAlexDomainId, required=True, description="OpenAlex domain identifier (top of the topic hierarchy)"),
     "display_name":   ColumnSpec(description="Human-readable domain name"),
     "description":    ColumnSpec(description="Free-text description of the domain"),
     "works_count":    ColumnSpec(description="Number of works tagged to this domain"),

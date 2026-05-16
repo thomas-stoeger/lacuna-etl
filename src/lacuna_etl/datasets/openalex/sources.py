@@ -8,7 +8,7 @@ Produces two tables per batch:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import IssnL, SourceId, TopicId
+from lacuna_etl.core.identifiers import IssnL, OpenAlexSourceId, OpenAlexTopicId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -90,7 +90,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _SOURCES_DOC = {
-    "source_id":              ColumnSpec(identifier=SourceId,    required=True, description="OpenAlex source identifier (journal, repository, conference, etc.)"),
+    "source_id":              ColumnSpec(identifier=OpenAlexSourceId,    required=True, description="OpenAlex source identifier (journal, repository, conference, etc.)"),
     "issn_l":                 ColumnSpec(identifier=IssnL,       description="Linking ISSN, if assigned"),
     "display_name":           ColumnSpec(description="Source name"),
     "type":                   ColumnSpec(description="Source type (journal / repository / ebook platform / book series / conference / other)"),
@@ -114,8 +114,8 @@ _SOURCES_DOC = {
 }
 
 _SOURCES_TOPICS_DOC = {
-    "source_id": ColumnSpec(identifier=SourceId, required=True, description="Source the topic count is attributed to"),
-    "topic_id":  ColumnSpec(identifier=TopicId,  required=True, description="Topic with non-zero presence in this source"),
+    "source_id": ColumnSpec(identifier=OpenAlexSourceId, required=True, description="Source the topic count is attributed to"),
+    "topic_id":  ColumnSpec(identifier=OpenAlexTopicId,  required=True, description="Topic with non-zero presence in this source"),
     "count":     ColumnSpec(description="Number of works on this topic at this source"),
 }
 

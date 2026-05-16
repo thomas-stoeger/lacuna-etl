@@ -12,7 +12,7 @@ Produces three tables per batch:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import ConceptId, WikidataId
+from lacuna_etl.core.identifiers import OpenAlexConceptId, WikidataId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -84,7 +84,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _CONCEPTS_DOC = {
-    "concept_id":     ColumnSpec(identifier=ConceptId,  required=True, description="OpenAlex concept identifier (deprecated; superseded by topics/fields/subfields/domains)"),
+    "concept_id":     ColumnSpec(identifier=OpenAlexConceptId,  required=True, description="OpenAlex concept identifier (deprecated; superseded by topics/fields/subfields/domains)"),
     "display_name":   ColumnSpec(description="Human-readable concept name"),
     "level":          ColumnSpec(description="Depth in the concept hierarchy (0 = root)"),
     "description":    ColumnSpec(description="Free-text description of the concept"),
@@ -96,14 +96,14 @@ _CONCEPTS_DOC = {
 }
 
 _CONCEPTS_ANCESTORS_DOC = {
-    "concept_id":     ColumnSpec(identifier=ConceptId, required=True, description="Concept whose ancestor is being described"),
-    "ancestor_id":    ColumnSpec(identifier=ConceptId, required=True, description="Ancestor concept"),
+    "concept_id":     ColumnSpec(identifier=OpenAlexConceptId, required=True, description="Concept whose ancestor is being described"),
+    "ancestor_id":    ColumnSpec(identifier=OpenAlexConceptId, required=True, description="Ancestor concept"),
     "ancestor_level": ColumnSpec(description="Depth of the ancestor in the concept hierarchy"),
 }
 
 _CONCEPTS_RELATED_DOC = {
-    "concept_id": ColumnSpec(identifier=ConceptId, required=True, description="Concept whose related concept is being described"),
-    "related_id": ColumnSpec(identifier=ConceptId, required=True, description="Related concept"),
+    "concept_id": ColumnSpec(identifier=OpenAlexConceptId, required=True, description="Concept whose related concept is being described"),
+    "related_id": ColumnSpec(identifier=OpenAlexConceptId, required=True, description="Related concept"),
     "score":      ColumnSpec(description="Relatedness score assigned by OpenAlex"),
 }
 

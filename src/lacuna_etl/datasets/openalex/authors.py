@@ -9,7 +9,7 @@ Produces three tables per batch:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import AuthorId, InstitutionId, Orcid, TopicId
+from lacuna_etl.core.identifiers import OpenAlexAuthorId, OpenAlexInstitutionId, Orcid, OpenAlexTopicId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id, short_orcid
@@ -101,7 +101,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _AUTHORS_DOC = {
-    "author_id":          ColumnSpec(identifier=AuthorId, required=True, description="OpenAlex author identifier"),
+    "author_id":          ColumnSpec(identifier=OpenAlexAuthorId, required=True, description="OpenAlex author identifier"),
     "display_name":       ColumnSpec(description="Author name as it appears in OpenAlex"),
     "orcid":              ColumnSpec(identifier=Orcid, description="ORCID iD, with the URL prefix stripped"),
     "works_count":        ColumnSpec(description="Number of works attributed to this author"),
@@ -114,14 +114,14 @@ _AUTHORS_DOC = {
 }
 
 _AFFILIATIONS_DOC = {
-    "author_id":      ColumnSpec(identifier=AuthorId,      required=True, description="Author whose affiliation is being described"),
-    "institution_id": ColumnSpec(identifier=InstitutionId, required=True, description="Institution the author was affiliated with"),
+    "author_id":      ColumnSpec(identifier=OpenAlexAuthorId,      required=True, description="Author whose affiliation is being described"),
+    "institution_id": ColumnSpec(identifier=OpenAlexInstitutionId, required=True, description="Institution the author was affiliated with"),
     "years":          ColumnSpec(description="Years (list of int) during which the affiliation held"),
 }
 
 _AUTHOR_TOPICS_DOC = {
-    "author_id": ColumnSpec(identifier=AuthorId, required=True, description="Author the topic count is attributed to"),
-    "topic_id":  ColumnSpec(identifier=TopicId,  required=True, description="Topic with non-zero presence in the author's works"),
+    "author_id": ColumnSpec(identifier=OpenAlexAuthorId, required=True, description="Author the topic count is attributed to"),
+    "topic_id":  ColumnSpec(identifier=OpenAlexTopicId,  required=True, description="Topic with non-zero presence in the author's works"),
     "count":     ColumnSpec(description="Number of the author's works on this topic"),
 }
 

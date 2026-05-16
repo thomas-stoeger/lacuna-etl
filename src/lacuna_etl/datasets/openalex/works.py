@@ -13,14 +13,14 @@ OpenAlex IDs are stored in short form, e.g. "W2741809807" not the full URL.
 import polars as pl
 
 from lacuna_etl.core.identifiers import (
-    AuthorId,
+    OpenAlexAuthorId,
     Doi,
-    DomainId,
-    FieldId,
-    SourceId,
-    SubfieldId,
-    TopicId,
-    WorkId,
+    OpenAlexDomainId,
+    OpenAlexFieldId,
+    OpenAlexSourceId,
+    OpenAlexSubfieldId,
+    OpenAlexTopicId,
+    OpenAlexWorkId,
 )
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
@@ -208,7 +208,7 @@ def verify_batch(
 
 
 _WORKS_DOC = {
-    "work_id":                        ColumnSpec(identifier=WorkId,     required=True, description="OpenAlex work identifier"),
+    "work_id":                        ColumnSpec(identifier=OpenAlexWorkId,     required=True, description="OpenAlex work identifier"),
     "doi":                            ColumnSpec(identifier=Doi,        description="DOI with the URL prefix stripped"),
     "title":                          ColumnSpec(description="Work title"),
     "publication_year":               ColumnSpec(description="Publication year"),
@@ -224,13 +224,13 @@ _WORKS_DOC = {
     "citation_normalized_percentile": ColumnSpec(description="Citation percentile normalized within the work's field/year"),
     "is_oa":                          ColumnSpec(description="Whether the work is open-access at any location"),
     "oa_status":                      ColumnSpec(description="Open-access status (closed, gold, hybrid, green, bronze, diamond)"),
-    "primary_source_id":              ColumnSpec(identifier=SourceId,   description="Primary publication source"),
+    "primary_source_id":              ColumnSpec(identifier=OpenAlexSourceId,   description="Primary publication source"),
     "primary_source_type":            ColumnSpec(description="Type of the primary source (journal, repository, etc.)"),
     "primary_location_is_oa":         ColumnSpec(description="Whether the primary location is open-access"),
-    "primary_topic_id":               ColumnSpec(identifier=TopicId,    description="Primary topic assigned by OpenAlex"),
-    "primary_subfield_id":            ColumnSpec(identifier=SubfieldId, description="Subfield of the primary topic"),
-    "primary_field_id":               ColumnSpec(identifier=FieldId,    description="Field of the primary topic"),
-    "primary_domain_id":              ColumnSpec(identifier=DomainId,   description="Domain of the primary topic"),
+    "primary_topic_id":               ColumnSpec(identifier=OpenAlexTopicId,    description="Primary topic assigned by OpenAlex"),
+    "primary_subfield_id":            ColumnSpec(identifier=OpenAlexSubfieldId, description="Subfield of the primary topic"),
+    "primary_field_id":               ColumnSpec(identifier=OpenAlexFieldId,    description="Field of the primary topic"),
+    "primary_domain_id":              ColumnSpec(identifier=OpenAlexDomainId,   description="Domain of the primary topic"),
     "volume":                         ColumnSpec(description="Bibliographic volume"),
     "issue":                          ColumnSpec(description="Bibliographic issue"),
     "first_page":                     ColumnSpec(description="First page (string; may be non-numeric)"),
@@ -242,8 +242,8 @@ _WORKS_DOC = {
 }
 
 _AUTHORSHIPS_DOC = {
-    "work_id":          ColumnSpec(identifier=WorkId,   required=True, description="Work the authorship belongs to"),
-    "author_id":        ColumnSpec(identifier=AuthorId, description="Author (may be null for anonymous / unmatched authorships)"),
+    "work_id":          ColumnSpec(identifier=OpenAlexWorkId,   required=True, description="Work the authorship belongs to"),
+    "author_id":        ColumnSpec(identifier=OpenAlexAuthorId, description="Author (may be null for anonymous / unmatched authorships)"),
     "author_position":  ColumnSpec(allowed_values={"first", "middle", "last"}, description="Position of the author in the byline"),
     "is_corresponding": ColumnSpec(description="Whether this author is marked as corresponding"),
     "institution_ids":  ColumnSpec(description="OpenAlex institution IDs the author was affiliated with for this work"),
@@ -251,17 +251,17 @@ _AUTHORSHIPS_DOC = {
 }
 
 _TOPICS_DOC = {
-    "work_id":     ColumnSpec(identifier=WorkId,     required=True, description="Work the topic is assigned to"),
-    "topic_id":    ColumnSpec(identifier=TopicId,    description="Topic assigned to the work"),
+    "work_id":     ColumnSpec(identifier=OpenAlexWorkId,     required=True, description="Work the topic is assigned to"),
+    "topic_id":    ColumnSpec(identifier=OpenAlexTopicId,    description="Topic assigned to the work"),
     "score":       ColumnSpec(description="OpenAlex confidence score for the topic assignment"),
-    "subfield_id": ColumnSpec(identifier=SubfieldId, description="Subfield of the topic"),
-    "field_id":    ColumnSpec(identifier=FieldId,    description="Field of the topic"),
-    "domain_id":   ColumnSpec(identifier=DomainId,   description="Domain of the topic"),
+    "subfield_id": ColumnSpec(identifier=OpenAlexSubfieldId, description="Subfield of the topic"),
+    "field_id":    ColumnSpec(identifier=OpenAlexFieldId,    description="Field of the topic"),
+    "domain_id":   ColumnSpec(identifier=OpenAlexDomainId,   description="Domain of the topic"),
 }
 
 _REFS_DOC = {
-    "work_id":     ColumnSpec(identifier=WorkId, required=True, description="Citing work"),
-    "ref_work_id": ColumnSpec(identifier=WorkId, required=True, description="Cited work"),
+    "work_id":     ColumnSpec(identifier=OpenAlexWorkId, required=True, description="Citing work"),
+    "ref_work_id": ColumnSpec(identifier=OpenAlexWorkId, required=True, description="Cited work"),
 }
 
 TABLES_DOC = {

@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import SourceTypeId
+from lacuna_etl.core.identifiers import OpenAlexSourceTypeId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -34,7 +34,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _SOURCE_TYPES_DOC = {
-    "source_type_id": ColumnSpec(identifier=SourceTypeId, required=True, description="OpenAlex source-type identifier (journal, repository, etc.)"),
+    "source_type_id": ColumnSpec(identifier=OpenAlexSourceTypeId, required=True, description="OpenAlex source-type identifier (journal, repository, etc.)"),
     "display_name":   ColumnSpec(description="Human-readable type name"),
     "works_count":    ColumnSpec(description="Number of works hosted by sources of this type"),
     "cited_by_count": ColumnSpec(description="Total citations to works hosted by sources of this type"),

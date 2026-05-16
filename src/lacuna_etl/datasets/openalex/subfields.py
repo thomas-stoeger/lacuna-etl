@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import DomainId, FieldId, SubfieldId
+from lacuna_etl.core.identifiers import OpenAlexDomainId, OpenAlexFieldId, OpenAlexSubfieldId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -42,11 +42,11 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _SUBFIELDS_DOC = {
-    "subfield_id":    ColumnSpec(identifier=SubfieldId, required=True, description="OpenAlex subfield identifier (third tier of the topic hierarchy)"),
+    "subfield_id":    ColumnSpec(identifier=OpenAlexSubfieldId, required=True, description="OpenAlex subfield identifier (third tier of the topic hierarchy)"),
     "display_name":   ColumnSpec(description="Human-readable subfield name"),
     "description":    ColumnSpec(description="Free-text description of the subfield"),
-    "field_id":       ColumnSpec(identifier=FieldId, description="Parent field"),
-    "domain_id":      ColumnSpec(identifier=DomainId, description="Parent domain"),
+    "field_id":       ColumnSpec(identifier=OpenAlexFieldId, description="Parent field"),
+    "domain_id":      ColumnSpec(identifier=OpenAlexDomainId, description="Parent domain"),
     "works_count":    ColumnSpec(description="Number of works tagged to this subfield"),
     "cited_by_count": ColumnSpec(description="Total citations received by works in this subfield"),
     "updated_date":   ColumnSpec(description="Last time OpenAlex modified this record"),

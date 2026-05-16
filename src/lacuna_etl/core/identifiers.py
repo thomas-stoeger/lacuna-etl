@@ -244,87 +244,87 @@ class OpenAlexId(Identifier):
     dtype = pd.StringDtype()
 
 
-class WorkId(OpenAlexId):
+class OpenAlexWorkId(OpenAlexId):
     pattern = r"W\d+"
 
 
-class AuthorId(OpenAlexId):
+class OpenAlexAuthorId(OpenAlexId):
     pattern = r"A\d+"
 
 
-class InstitutionId(OpenAlexId):
+class OpenAlexInstitutionId(OpenAlexId):
     pattern = r"I\d+"
 
 
-class SourceId(OpenAlexId):
+class OpenAlexSourceId(OpenAlexId):
     pattern = r"S\d+"
 
 
-class FunderId(OpenAlexId):
+class OpenAlexFunderId(OpenAlexId):
     pattern = r"F\d+"
 
 
-class PublisherId(OpenAlexId):
+class OpenAlexPublisherId(OpenAlexId):
     pattern = r"P\d+"
 
 
-class ConceptId(OpenAlexId):
+class OpenAlexConceptId(OpenAlexId):
     pattern = r"C\d+"
 
 
-class TopicId(OpenAlexId):
+class OpenAlexTopicId(OpenAlexId):
     pattern = r"T\d+"
 
 
-class AwardId(OpenAlexId):
+class OpenAlexAwardId(OpenAlexId):
     pattern = r"G\d+"
 
 
-class DomainId(OpenAlexId):
+class OpenAlexDomainId(OpenAlexId):
     pattern = r"domains/\d+"
 
 
-class FieldId(OpenAlexId):
+class OpenAlexFieldId(OpenAlexId):
     pattern = r"fields/\d+"
 
 
-class SubfieldId(OpenAlexId):
+class OpenAlexSubfieldId(OpenAlexId):
     pattern = r"subfields/\d+"
 
 
-class SdgId(OpenAlexId):
+class OpenAlexSdgId(OpenAlexId):
     pattern = r"sdgs/\d+"
 
 
-class KeywordId(OpenAlexId):
+class OpenAlexKeywordId(OpenAlexId):
     # OpenAlex keyword slugs include unicode letters, dots, and unicode hyphens, so
     # accept any non-whitespace tail.
     pattern = r"keywords/\S+"
 
 
-class LanguageId(OpenAlexId):
+class OpenAlexLanguageId(OpenAlexId):
     pattern = r"languages/[a-z]{2,3}"
 
 
-class LicenseId(OpenAlexId):
+class OpenAlexLicenseId(OpenAlexId):
     pattern = r"licenses/[a-z0-9\-]+"
 
 
-class SourceTypeId(OpenAlexId):
+class OpenAlexSourceTypeId(OpenAlexId):
     pattern = r"source-types/[A-Za-z0-9 \-]+"
 
 
-class WorkTypeId(OpenAlexId):
+class OpenAlexWorkTypeId(OpenAlexId):
     pattern = r"types/[a-z0-9\-]+"
 
 
-class InstitutionTypeId(OpenAlexId):
+class OpenAlexInstitutionTypeId(OpenAlexId):
     pattern = r"institution-types/[a-z0-9\-]+"
 
 
-class ContinentId(OpenAlexId):
+class OpenAlexContinentId(OpenAlexId):
     pattern = r"continents/Q\d+"
 
 
-class CountryId(OpenAlexId):
+class OpenAlexCountryId(OpenAlexId):
     pattern = r"countries/[A-Z]{2}"

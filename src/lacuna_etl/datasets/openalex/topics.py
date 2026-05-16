@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import DomainId, FieldId, SubfieldId, TopicId
+from lacuna_etl.core.identifiers import OpenAlexDomainId, OpenAlexFieldId, OpenAlexSubfieldId, OpenAlexTopicId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -56,19 +56,19 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _TOPICS_DOC = {
-    "topic_id":       ColumnSpec(identifier=TopicId,    required=True, description="OpenAlex topic identifier (leaf of the topic hierarchy)"),
+    "topic_id":       ColumnSpec(identifier=OpenAlexTopicId,    required=True, description="OpenAlex topic identifier (leaf of the topic hierarchy)"),
     "display_name":   ColumnSpec(description="Human-readable topic name"),
     "description":    ColumnSpec(description="Free-text description of the topic"),
-    "subfield_id":    ColumnSpec(identifier=SubfieldId, description="Parent subfield"),
-    "field_id":       ColumnSpec(identifier=FieldId,    description="Ancestor field"),
-    "domain_id":      ColumnSpec(identifier=DomainId,   description="Ancestor domain"),
+    "subfield_id":    ColumnSpec(identifier=OpenAlexSubfieldId, description="Parent subfield"),
+    "field_id":       ColumnSpec(identifier=OpenAlexFieldId,    description="Ancestor field"),
+    "domain_id":      ColumnSpec(identifier=OpenAlexDomainId,   description="Ancestor domain"),
     "works_count":    ColumnSpec(description="Number of works tagged to this topic"),
     "cited_by_count": ColumnSpec(description="Total citations received by works in this topic"),
     "updated_date":   ColumnSpec(description="Last time OpenAlex modified this record"),
 }
 
 _KEYWORDS_DOC = {
-    "topic_id": ColumnSpec(identifier=TopicId, required=True, description="Topic the keyword belongs to"),
+    "topic_id": ColumnSpec(identifier=OpenAlexTopicId, required=True, description="Topic the keyword belongs to"),
     "keyword":  ColumnSpec(required=True, description="Free-text keyword associated with the topic"),
 }
 

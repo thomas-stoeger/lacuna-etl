@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import ContinentId, CountryId, WikidataId
+from lacuna_etl.core.identifiers import OpenAlexContinentId, OpenAlexCountryId, WikidataId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
 from lacuna_etl.datasets.openalex._utils import short_id
@@ -46,7 +46,7 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
 
 
 _CONTINENTS_DOC = {
-    "continent_id": ColumnSpec(identifier=ContinentId, required=True, description="OpenAlex continent identifier"),
+    "continent_id": ColumnSpec(identifier=OpenAlexContinentId, required=True, description="OpenAlex continent identifier"),
     "display_name": ColumnSpec(description="Human-readable continent name"),
     "wikidata_id":  ColumnSpec(identifier=WikidataId, description="Wikidata Q-identifier for this continent"),
     "description":  ColumnSpec(description="Free-text description of the continent"),
@@ -54,8 +54,8 @@ _CONTINENTS_DOC = {
 }
 
 _CONTINENTS_COUNTRIES_DOC = {
-    "continent_id": ColumnSpec(identifier=ContinentId, required=True, description="Continent the country belongs to"),
-    "country_id":   ColumnSpec(identifier=CountryId,   required=True, description="Country located on this continent"),
+    "continent_id": ColumnSpec(identifier=OpenAlexContinentId, required=True, description="Continent the country belongs to"),
+    "country_id":   ColumnSpec(identifier=OpenAlexCountryId,   required=True, description="Country located on this continent"),
 }
 
 TABLES_DOC = {"continents": _CONTINENTS_DOC, "continents_countries": _CONTINENTS_COUNTRIES_DOC}
