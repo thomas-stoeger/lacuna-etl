@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -14,6 +14,7 @@ class ColumnSpec:
     identifier: type[Identifier] | None = None
     description: str = ""
     allowed_values: set[str] | None = None
+    required: bool = False
 
     def cast(self, s: pd.Series) -> pd.Series:
         if self.identifier is not None:
@@ -28,12 +29,27 @@ class ColumnSpec:
             if unexpected:
                 raise ValueError(f"{s.name}: unexpected values {unexpected}, allowed: {self.allowed_values}")
 
-    def yaml_entry(self) -> dict[str, str]:
-        entry: dict[str, str] = {}
+    def validate_polars(self, s: Any) -> None:
+        if self.identifier is not None:
+            self.identifier.validate_polars(s, required=self.required)
+        elif self.required:
+            nulls = s.null_count()
+            if nulls > 0:
+                raise ValueError(f"{s.name}: {nulls} nulls (required)")
+        if self.allowed_values is not None:
+            non_null = s.drop_nulls()
+            unexpected = set(non_null.unique().to_list()) - self.allowed_values
+            if unexpected:
+                raise ValueError(f"{s.name}: unexpected values {unexpected}, allowed: {self.allowed_values}")
+
+    def yaml_entry(self) -> dict[str, str | bool]:
+        entry: dict[str, str | bool] = {}
         if self.identifier is not None:
             entry["identifier_type"] = self.identifier.__name__
         if self.description:
             entry["description"] = self.description
         if self.allowed_values is not None:
             entry["allowed_values"] = ", ".join(sorted(self.allowed_values))
+        if self.required:
+            entry["required"] = True
         return entry
