@@ -92,6 +92,12 @@ class PubmedId(NumericIdentifier):
     pass
 
 
+class GoId(Identifier):
+    """Gene Ontology term ID, e.g. 'GO:0008150'."""
+    dtype = pd.StringDtype()
+    pattern = r"GO:\d{7}"
+
+
 class Doi(Identifier):
     dtype = pd.StringDtype()
     pattern = r"10\.[^/\s]+/\S+"
