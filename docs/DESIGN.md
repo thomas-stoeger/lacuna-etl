@@ -1,0 +1,187 @@
+# lacuna-etl design and contract
+
+This document is the authoritative description of what this repo produces and the
+guarantees those outputs carry. The inspection and MCP repos that consume these
+datasets should treat the contract sections below (Output layout, Identifier
+contract, Invariants) as canonical and reference them rather than re-deriving the
+shape of the data.
+
+## Purpose
+
+`lacuna-etl` turns raw scientific bibliographic datasets, as downloaded and
+versioned by the sibling `data_downloader` repo, into cleaned, typed, validated
+Parquet tables with machine-readable schema sidecars.
+
+The split is deliberate. `data_downloader` owns acquisition and versioning and
+nothing else; it never reshapes data. This repo owns transformation and the
+output contract and never fetches anything. Keeping download and transform in
+separate repos means a re-download cannot silently change cleaning logic, and a
+cleaning change can be re-run against an already-downloaded snapshot without
+touching the network.
+
+## Inputs and outputs
+
+There are three roots, resolved in this order: environment variable, then
+`~/.config/lacuna_etl/config.toml` (written by `etl configure`), then a built-in
+default where one exists. See `src/lacuna_etl/config.py`.
+
+- **Data root** (`DL_DATA_ROOT`): where `data_downloader` writes raw snapshots.
+  Required; no default. Each dataset lives at `<data_root>/<name>/<version>/...`
+  and the pipeline always reads the lexicographically latest `<version>`
+  directory, so the ETL operates on the newest downloaded snapshot.
+- **Output root** (`ETL_OUTPUT_ROOT`): where cleaned datasets are written.
+  Required; no default. Outputs go to `<output_root>/<name>/`.
+- **Intermediate root** (`ETL_INTERMEDIATE_ROOT`): staging area between pipeline
+  stages. Defaults to `./intermediate/` in this repo. Intermediates are
+  disposable; they exist for restartability, not for consumption.
+
+Outputs are Parquet (snappy-compressed) plus a YAML sidecar per table. Parquet
+is chosen for typed, nullable, columnar, compressed storage that round-trips
+pandas and polars dtypes; the sidecar carries the human- and machine-readable
+column contract (identifier type, description, allowed values, required flag)
+that bare Parquet cannot express. The sidecar is generated from the same
+`ColumnSpec` objects used to validate the data, so documentation and enforcement
+cannot drift.
+
+## Architecture
+
+Every dataset is a `DatasetPipeline` subclass (`src/lacuna_etl/core/pipeline.py`)
+with three stages run in order by `run()`:
+
+1. **extract** — read raw files, rename source columns to snake_case, cast to
+   identifier dtypes, write intermediate Parquet (or, for streaming pipelines,
+   final shards directly).
+2. **transform** — apply cross-dataset corrections, explode multi-valued fields,
+   deduplicate, and validate identifier columns.
+3. **load** — write final Parquet to the output root and emit the schema sidecar.
+
+Pipelines self-register with the `@register` decorator into `REGISTRY`
+(`src/lacuna_etl/datasets/registry.py`); importing a dataset module is what
+registers it, so every dataset is imported in `datasets/__init__.py`. The CLI
+(`etl list`, `etl run <name>`) is a thin shell over the registry.
+
+`depends_on` declares cross-dataset dependencies (for example, the gene tables
+depend on `ncbi_gene_history`). **Dependencies are declared, not orchestrated:**
+`run()` executes a single dataset, and a dependent reads its prerequisite's
+*output*, so the operator must run prerequisites first. This keeps the runner
+trivial and makes each stage independently restartable, at the cost of manual
+ordering. `etl list` prints the dependencies to make ordering visible.
+
+### Two execution shapes
+
+- **In-memory (pandas).** Used for the NCBI gene tables and iCite, which fit in
+  memory. Read whole, cast, validate, write.
+- **Streaming, sharded, parallel (polars + `ProcessPoolExecutor`).** Used for
+  OpenAlex and PubMed, whose snapshots are far too large for memory. Each input
+  file is processed independently into per-file Parquet shards, with a
+  done-marker (PubMed) or shard-exists check (OpenAlex) so an interrupted run
+  resumes instead of restarting. Peak memory is bounded by one batch/shard, not
+  the dataset. For OpenAlex the snapshot is already immutable per version, so
+  `extract` writes final shards directly, `transform` only validates across
+  shards, and `load` only writes sidecars.
+
+## Identifier contract
+
+Identifier types (`src/lacuna_etl/core/identifiers.py`) centralize the canonical
+form and validation of every cross-referenced ID, so that any dataset emitting a
+DOI, PMID, ORCID, and so on enforces the *same* shape. This is the core of why
+downstream repos can join across datasets safely. Canonical forms:
+
+- **DOI** — URL prefix stripped, lowercase scheme removed; stored as `10.x/...`,
+  never as a `https://doi.org/` URL.
+- **PMID, NCBI Gene ID, NCBI Tax ID** — positive `Int64`, never zero or negative.
+- **ORCID** — canonical hyphenated `XXXX-XXXX-XXXX-XXXX`, ISO 7064 MOD 11-2 check
+  digit recovered or verified; values that fail the checksum become null rather
+  than propagating a wrong ID.
+- **ISSN-L** — canonical hyphenated `XXXX-XXXC`, checksum verified/recovered.
+- **GO ID** — `GO:` followed by 7 digits.
+- **ROR ID** — canonical full URL `https://ror.org/...` (the registry's own
+  canonical form).
+- **Wikidata ID** — bare `Q\d+`, URL forms stripped.
+- **Country code** — ISO 3166-1 alpha-2 (and alpha-3 where noted).
+- **OpenAlex IDs** — short form (`W2741809807`, `A...`, `I...`, etc.), URL prefix
+  stripped, to normalize and to save space across hundreds of millions of rows.
+
+Patterns are stored unanchored on each identifier and anchored at validation
+time. Empty and whitespace-only strings are normalized to null (an OpenAlex
+convention applied everywhere). A pipeline that produces a value violating its
+identifier's pattern fails loudly; it does not emit bad data.
+
+## Output layout and table inventory
+
+`<output_root>/<dataset>/<table>.parquet` with a sibling `<table>.yml`.
+Column-level detail (names, identifier types, descriptions, allowed values) is
+defined once in each dataset module's `SCHEMA` / `TABLES_DOC` dict and emitted
+verbatim to the sidecar. **Those `*.yml` sidecars, generated from the module
+`ColumnSpec`s, are the authoritative column-level schema.** This file documents
+the table set and grain; it does not duplicate every column.
+
+NCBI gene tables (pandas; all `depends_on = ncbi_gene_history`):
+
+- `ncbi_gene_history` → `gene_history` (discontinued/replacement Gene ID map).
+- `ncbi_gene_info` → `gene_info` (one row per gene).
+- `ncbi_gene2go` → `gene2go` (one row per gene/GO/PubMed annotation; the source
+  pipe-joined PubMed list is exploded to one PMID per row).
+- `ncbi_gene2pubmed` → `gene2pubmed` (one row per gene/PubMed link).
+- `ncbi_generifs` → `gene_rif` (Gene Reference into Function statements).
+
+iCite (pandas):
+
+- `icite` → `icite` (one row per PMID, citation metrics) and
+  `open_citation_collection` (citing → referenced PMID pairs).
+
+PubMed / MEDLINE (`ncbi_pubmed`, streaming): one parent table `articles` (one
+current row per PMID) plus child tables keyed by PMID — `authors`,
+`affiliations`, `mesh_headings`, `chemicals`, `publication_types`, `grants`,
+`keywords`, `article_ids`, `references` — and `deleted_pmids`.
+
+OpenAlex (21 datasets, streaming): `openalex_works` produces `works`,
+`works_authorships`, `works_topics`, and `works_refs`; the other 20 entities
+(`openalex_authors`, `openalex_sources`, `openalex_institutions`, the topic
+hierarchy, and the controlled-vocabulary lookups) each produce a single
+similarly named table.
+
+## Invariants the ETL guarantees
+
+A consumer may rely on all of the following for any successfully produced table:
+
+- **Identifier columns conform to their canonical form.** Validation runs before
+  load; a violation aborts the run, so malformed identifiers never reach output.
+- **`required` columns contain no nulls.**
+- **Numeric IDs are positive `Int64`.**
+- **Entrez Gene IDs are current.** Discontinued IDs are remapped to their
+  replacement via `ncbi_gene_history`; an ID discontinued *without* a replacement
+  is a hard error, never a silent drop. So a Gene ID in any gene output is a live
+  ID, and prerequisites must be run first.
+- **DOIs carry no URL prefix; ORCIDs are checksum-valid or null; OpenAlex IDs are
+  short form.** (See the identifier contract.)
+- **iCite PMIDs are unique**, and the output column set matches `SCHEMA` exactly
+  (an unexpected source column aborts the run rather than passing through).
+- **PubMed reflects "latest wins."** NLM's load order is encoded in the filename
+  integer `NNNN`; every row is tagged with that `file_seq`, and transform keeps
+  only each PMID's max-`file_seq` version. Child-table rows are versioned with
+  their parent, so a revised article fully replaces its prior children. PMIDs
+  listed in any `DeleteCitation` are anti-joined out of every table.
+- **Categorical columns honor their `allowed_values`** (for example GO aspect,
+  gene nomenclature status, OpenAlex authorship position).
+- **Every output table has a sidecar `.yml`** describing its columns.
+
+## Assumptions
+
+- The latest `<version>` directory under each dataset is the one to process;
+  versions sort lexicographically into chronological order (as `data_downloader`
+  names them).
+- Source layouts are stable per provider: NCBI tab files use `-` for null;
+  OpenAlex is gzipped JSONL under `data/<entity>/updated_date=*/part_*.gz`;
+  PubMed is gzipped MEDLINE XML in `baseline/` then `updatefiles/`.
+- Validation is inline in the pipelines, by design: a run that completes is a
+  run whose contract held. There is no separate unit-test suite asserting the
+  contract; the pipelines assert it on every run.
+
+## Changing the contract
+
+The schema is the product. Adding, removing, renaming, or retyping an output
+column, changing an identifier's canonical form, or changing a table's grain is a
+**contract change** that downstream repos depend on. Update the relevant module's
+`ColumnSpec`/`SCHEMA`/`TABLES_DOC` (which regenerates the sidecar) *and* this
+document in the same change, and treat it as a breaking change for consumers.
