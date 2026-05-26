@@ -25,6 +25,7 @@ from lacuna_etl.core.identifiers import Doi, Orcid
 
 
 _DOI_WHITESPACE = re.compile(r"\s+")
+_FOUR_DIGIT = re.compile(r"\d{4}")
 
 
 def _clean_doi(value: str | None) -> str | None:
@@ -120,6 +121,12 @@ def parse_article(elem: ET.Element) -> dict:
     pub_month = _text(pub_date, "Month") if pub_date is not None else None
     pub_day = _parse_int(_text(pub_date, "Day")) if pub_date is not None else None
     medline_date = _text(pub_date, "MedlineDate") if pub_date is not None else None
+    if pub_year is None and medline_date is not None:
+        # Only infer when the free-text date carries an unambiguous single year;
+        # ranges like "1947-1948" are left null rather than picking a side.
+        years = _FOUR_DIGIT.findall(medline_date)
+        if len(years) == 1:
+            pub_year = int(years[0])
 
     issn_el = journal.find("ISSN") if journal is not None else None
     issn = (issn_el.text.strip() if issn_el is not None and issn_el.text else None)
