@@ -39,7 +39,7 @@ def get_intermediate_root() -> Path:
             cfg = tomllib.load(f)
         if path := cfg.get("intermediate_root"):
             return Path(path)
-    return Path(__file__).parents[3] / "intermediate"
+    return Path(__file__).parents[2] / "intermediate"
 
 
 def save_config(
