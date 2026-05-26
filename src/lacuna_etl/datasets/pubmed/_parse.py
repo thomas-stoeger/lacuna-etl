@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterator
 
-from lacuna_etl.core.identifiers import Doi, Orcid
+from lacuna_etl.core.identifiers import Doi, Orcid, PubmedId
 
 
 _DOI_WHITESPACE = re.compile(r"\s+")
@@ -93,7 +93,7 @@ def parse_article(elem: ET.Element) -> dict:
         return _empty_rows()
 
     pmid_el = mc.find("PMID")
-    pmid = _parse_int(pmid_el.text) if pmid_el is not None else None
+    pmid = PubmedId.parse(pmid_el.text) if pmid_el is not None else None
     if pmid is None:
         return _empty_rows()
     pmid_version = _parse_int(pmid_el.get("Version")) if pmid_el is not None else None
@@ -349,7 +349,7 @@ def parse_article(elem: ET.Element) -> dict:
             if rid_list is not None:
                 for rid in rid_list.findall("ArticleId"):
                     if rid.get("IdType") == "pubmed" and rid.text:
-                        ref_pmid = _parse_int(rid.text.strip())
+                        ref_pmid = PubmedId.parse(rid.text)
                         if ref_pmid is not None:
                             break
             if citation or ref_pmid is not None:
@@ -392,10 +392,9 @@ def parse_delete_citation(elem: ET.Element) -> list[int]:
     """Extract PMIDs listed in a <DeleteCitation> element."""
     pmids: list[int] = []
     for pmid_el in elem.findall("PMID"):
-        if pmid_el.text:
-            n = _parse_int(pmid_el.text.strip())
-            if n is not None:
-                pmids.append(n)
+        n = PubmedId.parse(pmid_el.text)
+        if n is not None:
+            pmids.append(n)
     return pmids
 
 

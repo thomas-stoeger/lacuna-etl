@@ -71,6 +71,34 @@ class NumericIdentifier(Identifier):
     dtype = pd.Int64Dtype()
 
     @classmethod
+    def parse(cls, value: object) -> int | None:
+        """Parse a single source value into a positive Python int, or None.
+
+        Accepts None, ints, and strings. Empty/whitespace-only strings become None.
+        Non-numeric strings, floats, booleans, and non-positive values raise
+        ValueError — there are no silent drops.
+        """
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            raise ValueError(f"{cls.__name__}: refusing to coerce bool: {value!r}")
+        if isinstance(value, int):
+            n = value
+        elif isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return None
+            try:
+                n = int(s)
+            except ValueError as e:
+                raise ValueError(f"{cls.__name__}: not a numeric string: {value!r}") from e
+        else:
+            raise ValueError(f"{cls.__name__}: unsupported type {type(value).__name__}: {value!r}")
+        if n <= 0:
+            raise ValueError(f"{cls.__name__}: IDs must be positive, got {n!r}")
+        return n
+
+    @classmethod
     def validate(cls, s: pd.Series) -> None:
         if not pd.api.types.is_integer_dtype(s):
             raise TypeError(f"{cls.__name__}: expected integer dtype, got {s.dtype}")
@@ -78,6 +106,27 @@ class NumericIdentifier(Identifier):
             raise ValueError(f"{cls.__name__}: unexpected null values")
         if (s <= 0).any():
             raise ValueError(f"{cls.__name__}: IDs must be positive")
+
+    @classmethod
+    def validate_polars(cls, s: "pl.Series", *, required: bool = False) -> None:
+        """Validate an integer polars Series: nulls (if required) and positivity."""
+        import polars as pl
+
+        if not s.dtype.is_integer():
+            raise TypeError(f"{cls.__name__}: expected integer dtype, got {s.dtype}")
+        nulls = s.null_count()
+        if required and nulls > 0:
+            raise ValueError(f"{cls.__name__}: column {s.name!r} has {nulls} nulls (required)")
+        non_null = s.drop_nulls()
+        if non_null.len() == 0:
+            return
+        bad_mask = non_null <= 0
+        n_bad = int(bad_mask.sum())
+        if n_bad:
+            sample = non_null.filter(bad_mask).head(5).to_list()
+            raise ValueError(
+                f"{cls.__name__}: column {s.name!r} has {n_bad} non-positive values, e.g. {sample}"
+            )
 
 
 class NcbiTaxId(NumericIdentifier):
