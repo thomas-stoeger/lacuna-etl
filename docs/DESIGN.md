@@ -170,6 +170,15 @@ OpenAlex (21 datasets, streaming): `openalex_works` produces `works`,
 hierarchy, and the controlled-vocabulary lookups) each produce a single
 similarly named table.
 
+Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
+snapshots):
+
+- `pmid_openalex` → `pmid_openalex` (one row per `(pmid, work_id)` link, with
+  `match_source` recording which rule produced it: `pmid`, `doi`,
+  `doi_versioned`, `pmcid`, or `title_year`). `depends_on` both
+  `ncbi_pubmed` and `openalex_works`; unmatched PMIDs are not in the table, so
+  consumers left-join from `articles` when they need them.
+
 ## Invariants the ETL guarantees
 
 A consumer may rely on all of the following for any successfully produced table:

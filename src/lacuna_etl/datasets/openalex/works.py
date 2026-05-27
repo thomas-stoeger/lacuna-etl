@@ -236,7 +236,7 @@ _WORKS_DOC = {
     "issue":                          ColumnSpec(description="Bibliographic issue"),
     "first_page":                     ColumnSpec(description="First page (string; may be non-numeric)"),
     "last_page":                      ColumnSpec(description="Last page (string; may be non-numeric)"),
-    "pmid":                           ColumnSpec(identifier=PubmedId, description="PubMed identifier"),
+    "pmid":                           ColumnSpec(identifier=PubmedId, description="PubMed identifier as carried by OpenAlex; sparse — for fuller coverage join the pmid_openalex crosswalk"),
     "pmcid":                          ColumnSpec(description="PubMed Central ID"),
     "created_date":                   ColumnSpec(description="When OpenAlex created this record"),
     "updated_date":                   ColumnSpec(description="Last time OpenAlex modified this record"),
