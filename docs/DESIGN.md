@@ -80,6 +80,35 @@ ordering. `etl list` prints the dependencies to make ordering visible.
   `extract` writes final shards directly, `transform` only validates across
   shards, and `load` only writes sidecars.
 
+### Filling in missing values
+
+When a field is sometimes null in raw data and you want to populate it for more
+rows, the right shape depends on where the substitute value comes from.
+
+- **Same-record fallback is normal extract/transform.** Deriving a column from
+  another field on the same record — falling back from `PubDate.Year` to
+  `ArticleDate.Year`, parsing a year out of a `MedlineDate` free-text string,
+  stripping URL prefixes off an identifier — stays inside that record's own
+  authoritative source. Populate the column directly; the column's meaning is
+  unchanged and no provenance column is needed.
+- **Cross-dataset heuristic linkage gets its own table.** Inferring
+  `openalex_works.pmid` for records OpenAlex lacks one for, by matching against
+  PubMed on DOI / title / journal / year, is a different operation: the value
+  comes from outside the source record, the match is heuristic, and a false
+  match links an entirely wrong paper. Such linkages belong in their own dataset
+  — a crosswalk table such as `(work_id, pmid, match_source)` with `depends_on`
+  on both upstreams. The upstream tables stay unchanged; consumers join the
+  crosswalk when they want the enriched view. This preserves the provenance of
+  every value, lets the matching heuristic be re-tuned without rewriting the
+  heavy upstream outputs, and keeps each artifact answering exactly one
+  question.
+
+The rule: same column, broader population is fine when the new values come from
+within the same record's own authoritative source. It becomes a contract
+problem when the new values come from outside that source or from heuristic
+matching across datasets — those cases need their own table so provenance,
+confidence, and iteration speed are preserved.
+
 ## Identifier contract
 
 Identifier types (`src/lacuna_etl/core/identifiers.py`) centralize the canonical
