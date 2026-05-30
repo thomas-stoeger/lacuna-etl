@@ -72,13 +72,16 @@ ordering. `etl list` prints the dependencies to make ordering visible.
 - **In-memory (pandas).** Used for the NCBI gene tables and iCite, which fit in
   memory. Read whole, cast, validate, write.
 - **Streaming, sharded, parallel (polars + `ProcessPoolExecutor`).** Used for
-  OpenAlex and PubMed, whose snapshots are far too large for memory. Each input
-  file is processed independently into per-file Parquet shards, with a
-  done-marker (PubMed) or shard-exists check (OpenAlex) so an interrupted run
-  resumes instead of restarting. Peak memory is bounded by one batch/shard, not
-  the dataset. For OpenAlex the snapshot is already immutable per version, so
-  `extract` writes final shards directly, `transform` only validates across
-  shards, and `load` only writes sidecars.
+  OpenAlex, PubMed, and PubTator3, whose snapshots are far too large for memory.
+  Each input file is processed independently into per-file Parquet shards, with a
+  done-marker (PubMed, PubTator3) or shard-exists check (OpenAlex) so an
+  interrupted run resumes instead of restarting. Peak memory is bounded by one
+  batch/shard, not the dataset. For OpenAlex the snapshot is already immutable per
+  version, so `extract` writes final shards directly, `transform` only validates
+  across shards, and `load` only writes sidecars. PubTator3's unit of work is one
+  whole `BioCXML.<n>.tar.gz` archive per worker; because a single archive holds
+  millions of documents, the worker flushes per-table shards every N documents to
+  keep its memory bounded.
 
 ### Filling in missing values
 
@@ -169,6 +172,31 @@ OpenAlex (21 datasets, streaming): `openalex_works` produces `works`,
 (`openalex_authors`, `openalex_sources`, `openalex_institutions`, the topic
 hierarchy, and the controlled-vocabulary lookups) each produce a single
 similarly named table.
+
+PubTator3 (`ncbi_pubtator3`, streaming): the BioC-XML archives carry NCBI's
+text-mined bio-entity annotations and concept-concept relations over PubMed and
+the PMC full-text subset. Three tables, all keyed by PMID:
+
+- `articles` — one row per PMID (document), with the article-level metadata
+  PubTator carries (pmc_id, doi, year, volume/issue/pages, license) plus
+  `has_full_text` and `n_passages`. Body text is intentionally not stored.
+  Metadata is read only from the front/title passage, never from reference
+  passages (which describe cited works). A small fraction of documents (~0.1%)
+  are PMC full-text articles keyed by a `PMC…` id with no PMID; because the whole
+  dataset is PMID-keyed, those are excluded and their count is reported at the end
+  of `extract`.
+- `annotations` — one row per tagged entity mention, with its `section_type`,
+  `offset`, `length`, surface `mention`, `entity_type`, and the verbatim concept
+  `identifier`. Mentions tagged inside reference-list passages are excluded.
+- `relations` — one row per extracted relation, with `relation_type`, `score`,
+  and the two roles split into `roleN_type` / `roleN_identifier`.
+
+`entity_type`, `section_type`, and `relation_type` are documented free strings,
+not `allowed_values`-constrained: they are machine-generated and the value set
+can grow between PubTator releases, so a new value should not abort a run. The
+concept `identifier` is stored exactly as PubTator emits it (heterogeneous by
+type, and a packed composite for variants), so it is a plain string rather than a
+single canonical identifier type.
 
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):
