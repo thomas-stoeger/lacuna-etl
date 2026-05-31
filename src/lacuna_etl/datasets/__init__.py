@@ -9,5 +9,6 @@ from lacuna_etl.datasets import openalex as _______  # noqa: F401
 from lacuna_etl.datasets import pubmed as ________  # noqa: F401
 from lacuna_etl.datasets import pubtator3 as _________  # noqa: F401
 from lacuna_etl.datasets import pmid_openalex as __________  # noqa: F401
+from lacuna_etl.datasets import opentargets as ___________  # noqa: F401
 
 __all__ = ["REGISTRY", "register"]
