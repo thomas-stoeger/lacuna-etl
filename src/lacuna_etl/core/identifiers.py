@@ -141,6 +141,15 @@ class PubmedId(NumericIdentifier):
     pass
 
 
+class RetractionWatchId(NumericIdentifier):
+    """Retraction Watch internal record identifier (positive Int64).
+
+    Dataset-internal key for the Retraction Watch database; not cross-referenced
+    by other datasets, but validated to the same positive-integer contract.
+    """
+    pass
+
+
 class GoId(Identifier):
     """Gene Ontology term ID, e.g. 'GO:0008150'."""
     dtype = pd.StringDtype()

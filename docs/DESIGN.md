@@ -207,6 +207,32 @@ snapshots):
   `ncbi_pubmed` and `openalex_works`; unmatched PMIDs are not in the table, so
   consumers left-join from `articles` when they need them.
 
+Research-integrity lists (pandas; small in-memory CSV sources):
+
+- `predatory_journals` → `predatory_journals` and `predatory_publishers` →
+  `predatory_publishers` (Beall's-list-style name lists). The source is a
+  headerless two-column CSV (`row number, name`); the cleaned output is a single
+  `title` column, one row per distinct name.
+- `retractionwatch_hijackedjournals` → `hijacked_journals` (one row per
+  hijacked/clone record: `record_id`, hijacked vs. original titles and URLs) and
+  `hijacked_journal_issns` (one row per `(record_id, role, issn)`; the source's
+  comma-separated ISSN fields are split and normalized to canonical ISSN form,
+  with `role` ∈ {`hijacked`, `original`}). The source CSV's first record is a
+  donation banner, so the real header is its second record.
+- `retractionwatch_retractiondatabase` → parent `retractions` (one row per
+  Retraction Watch `record_id`: titles, journal/publisher, dates, retraction and
+  original-paper DOIs/PMIDs, `retraction_nature`, `article_type`, `paywalled`,
+  `notes`) plus child tables that explode the source's `;`-delimited fields, each
+  keyed by `record_id`: `retraction_reasons`, `retraction_subjects`,
+  `retraction_authors`, `retraction_countries`, `retraction_institutions`,
+  `retraction_urls`. PubMed IDs use `0`/blank for "missing" (mapped to null);
+  DOIs use `unavailable`/blank for "missing" and are repaired to canonical form,
+  with unrecoverable values set to null. `record_id` is a positive `Int64`
+  (`RetractionWatchId`), a dataset-internal key not cross-referenced elsewhere;
+  a small fraction of source rows (~0.4%) carry no Record ID and, since it is the
+  parent key and every child's join key, those rows are excluded with the count
+  reported at transform time rather than dropped silently or given a fabricated id.
+
 ## Invariants the ETL guarantees
 
 A consumer may rely on all of the following for any successfully produced table:
