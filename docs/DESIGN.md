@@ -120,7 +120,24 @@ DOI, PMID, ORCID, and so on enforces the *same* shape. This is the core of why
 downstream repos can join across datasets safely. Canonical forms:
 
 - **DOI** — URL prefix stripped, lowercase scheme removed; stored as `10.x/...`,
-  never as a `https://doi.org/` URL.
+  never as a `https://doi.org/` URL. **Article-level**: a publisher version
+  suffix is never present. A handful of publishers append an article *version* to
+  the DOI — F1000 platform `10.12688/…` (`.N`, legacy `.vN`), Research Square
+  `10.21203/…/vN`, Preprints.org `10.20944/…vN`, ChemRxiv `10.26434`, TechRxiv
+  `10.36227`, Authorea/ESSOAr `10.22541/…/vN`, Qeios `10.32388/…N`, and
+  bioRxiv/medRxiv `10.1101/…vN` (the version `vN` is appended directly to the
+  article number with no separator; the rule is digit-led to exclude the Cold
+  Spring Harbor Press journals on the same registrant) — so two records
+  of the same article can carry DOIs differing only by version, which breaks DOI
+  joins. Detection is a curated, registrant-anchored allowlist (a blanket
+  "trailing `.N`/`vN`" rule is unsafe: most DOIs legitimately end in numbers, e.g.
+  Elsevier page ids, journal *Viruses* `10.3390/v1010072`, arXiv/SSRN ids). A
+  recognised versioned DOI is split into the article-level base `doi` plus a
+  sibling `<col>_versioned` column.
+- **DoiVersioned** — same canonical `10.x/...` shape as DOI but *may* carry a
+  publisher version suffix (supports, does not require, versioning). This is the
+  type of the sibling `<col>_versioned` column that preserves the original
+  versioned DOI; it is null on rows whose DOI carries no recognised version.
 - **PMID, NCBI Gene ID, NCBI Tax ID** — positive `Int64`, never zero or negative.
 - **ORCID** — canonical hyphenated `XXXX-XXXX-XXXX-XXXX`, ISO 7064 MOD 11-2 check
   digit recovered or verified; values that fail the checksum become null rather
@@ -172,25 +189,30 @@ NCBI gene tables (pandas; all `depends_on = ncbi_gene_history`):
 iCite (pandas):
 
 - `icite` → `icite` (one row per PMID, citation metrics) and
-  `open_citation_collection` (citing → referenced PMID pairs).
+  `open_citation_collection` (citing → referenced PMID pairs). `icite.doi` is
+  article-level with a `doi_versioned` sibling (see the DOI identifier contract).
 
 PubMed / MEDLINE (`ncbi_pubmed`, streaming): one parent table `articles` (one
 current row per PMID) plus child tables keyed by PMID — `authors`,
 `affiliations`, `mesh_headings`, `chemicals`, `publication_types`, `grants`,
-`keywords`, `article_ids`, `references` — and `deleted_pmids`.
+`keywords`, `article_ids`, `references` — and `deleted_pmids`. `articles.doi` is
+article-level with a `doi_versioned` sibling; `article_ids` is left as the
+verbatim source id list (its plain-string `value` is not version-split).
 
 OpenAlex (21 datasets, streaming): `openalex_works` produces `works`,
 `works_authorships`, `works_topics`, and `works_refs`; the other 20 entities
 (`openalex_authors`, `openalex_sources`, `openalex_institutions`, the topic
 hierarchy, and the controlled-vocabulary lookups) each produce a single
-similarly named table.
+similarly named table. `works.doi` is article-level with a `doi_versioned`
+sibling.
 
 PubTator3 (`ncbi_pubtator3`, streaming): the BioC-XML archives carry NCBI's
 text-mined bio-entity annotations and concept-concept relations over PubMed and
 the PMC full-text subset. Three tables, all keyed by PMID:
 
 - `articles` — one row per PMID (document), with the article-level metadata
-  PubTator carries (pmc_id, doi, year, volume/issue/pages, license) plus
+  PubTator carries (pmc_id, doi (+ `doi_versioned` sibling), year,
+  volume/issue/pages, license) plus
   `has_full_text` and `n_passages`. Body text is intentionally not stored.
   Metadata is read only from the front/title passage, never from reference
   passages (which describe cited works). A small fraction of documents (~0.1%)
@@ -305,9 +327,13 @@ snapshots):
 
 - `pmid_openalex` → `pmid_openalex` (one row per `(pmid, work_id)` link, with
   `match_source` recording which rule produced it: `pmid`, `doi`,
-  `doi_versioned`, `pmcid`, or `title_year`). `depends_on` both
-  `ncbi_pubmed` and `openalex_works`; unmatched PMIDs are not in the table, so
-  consumers left-join from `articles` when they need them.
+  `doi_versioned`, `pmcid`, or `title_year`). Both upstreams now store the
+  article-level DOI, so a single exact-DOI match links versioned variants of the
+  same article directly; that match is tagged `doi_versioned` rather than `doi`
+  when either side carried a publisher version suffix (read from the upstream
+  `doi_versioned` columns), else `doi`. `depends_on` both `ncbi_pubmed` and
+  `openalex_works`; unmatched PMIDs are not in the table, so consumers left-join
+  from `articles` when they need them.
 
 Research-integrity lists (pandas; small in-memory CSV sources):
 
@@ -329,7 +355,8 @@ Research-integrity lists (pandas; small in-memory CSV sources):
   `retraction_authors`, `retraction_countries`, `retraction_institutions`,
   `retraction_urls`. PubMed IDs use `0`/blank for "missing" (mapped to null);
   DOIs use `unavailable`/blank for "missing" and are repaired to canonical form,
-  with unrecoverable values set to null. `record_id` is a positive `Int64`
+  with unrecoverable values set to null; `retraction_doi` and `original_paper_doi`
+  are article-level, each with a `*_doi_versioned` sibling. `record_id` is a positive `Int64`
   (`RetractionWatchId`), a dataset-internal key not cross-referenced elsewhere;
   a small fraction of source rows (~0.4%) carry no Record ID and, since it is the
   parent key and every child's join key, those rows are excluded with the count
@@ -347,8 +374,11 @@ A consumer may rely on all of the following for any successfully produced table:
   replacement via `ncbi_gene_history`; an ID discontinued *without* a replacement
   is a hard error, never a silent drop. So a Gene ID in any gene output is a live
   ID, and prerequisites must be run first.
-- **DOIs carry no URL prefix; ORCIDs are checksum-valid or null; OpenAlex IDs are
-  short form.** (See the identifier contract.)
+- **DOIs carry no URL prefix and no version suffix; ORCIDs are checksum-valid or
+  null; OpenAlex IDs are short form.** A `doi` column is always the article-level
+  DOI (validation rejects a value carrying a recognised publisher version suffix);
+  the versioned form, when present, is in the sibling `<col>_versioned` column
+  (`DoiVersioned`). (See the identifier contract.)
 - **iCite PMIDs are unique**, and the output column set matches `SCHEMA` exactly
   (an unexpected source column aborts the run rather than passing through).
 - **PubMed reflects "latest wins."** NLM's load order is encoded in the filename

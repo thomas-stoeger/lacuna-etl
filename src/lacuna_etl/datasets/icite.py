@@ -6,7 +6,7 @@ import pyarrow as pa
 import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 
-from lacuna_etl.core.identifiers import Doi, PubmedId
+from lacuna_etl.core.identifiers import Doi, DoiVersioned, PubmedId, split_doi_version_pandas
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.registry import register
@@ -31,7 +31,8 @@ _BOOL_MAP = {"True": True, "False": False}
 
 SCHEMA = {
     "pmid": ColumnSpec(identifier=PubmedId, description="PubMed Identifier assigned by the National Library of Medicine"),
-    "doi": ColumnSpec(identifier=Doi, description="Digital Object Identifier, if available"),
+    "doi": ColumnSpec(identifier=Doi, description="Digital Object Identifier (article-level; any publisher version suffix is split into doi_versioned), if available"),
+    "doi_versioned": ColumnSpec(identifier=DoiVersioned, description="Original versioned DOI when the publisher appends an article version (e.g. F1000 '.N', Research Square '/vN'); null otherwise"),
     "title": ColumnSpec(description="Title of the article"),
     "year": ColumnSpec(description="Year the article was published"),
     "journal": ColumnSpec(description="Journal name (NLM abbreviation, without periods)"),
@@ -87,7 +88,11 @@ class ICite(DatasetPipeline):
         PubmedId.validate(df["pmid"])
 
         df["doi"] = Doi.cast(df["doi"])
+        # Split publisher-versioned DOIs (F1000 '.N', Research Square '/vN', ...):
+        # doi keeps the article-level base, doi_versioned keeps the full versioned form.
+        df["doi"], df["doi_versioned"] = split_doi_version_pandas(df["doi"])
         Doi.validate(df["doi"])
+        DoiVersioned.validate(df["doi_versioned"])
 
         for col in _INT_COLS:
             df[col] = pd.to_numeric(df[col], errors="raise").astype(pd.Int64Dtype())

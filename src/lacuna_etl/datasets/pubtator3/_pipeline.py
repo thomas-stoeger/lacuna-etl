@@ -33,6 +33,7 @@ import polars as pl
 import yaml
 from tqdm import tqdm
 
+from lacuna_etl.core.identifiers import doi_base_expr, doi_versioned_expr
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.datasets.pubtator3._parse import iter_documents, parse_document
 from lacuna_etl.datasets.pubtator3._schemas import POLARS_SCHEMAS, TABLES_DOC
@@ -190,7 +191,16 @@ class Pubtator3(DatasetPipeline):
 
         # PubTator shards by PMID, so a PMID should appear exactly once. `unique`
         # is a safety net against a PMID landing in two archives.
-        articles_lf = pl.scan_parquet(article_shards).unique(subset="pmid")
+        # Split publisher-versioned DOIs: doi keeps the article-level base,
+        # doi_versioned keeps the original versioned form (null when unversioned).
+        articles_lf = (
+            pl.scan_parquet(article_shards)
+            .unique(subset="pmid")
+            .with_columns(
+                doi_base_expr("doi").alias("doi"),
+                doi_versioned_expr("doi").alias("doi_versioned"),
+            )
+        )
         articles_lf.sink_parquet(out_root / "articles.parquet", compression="snappy")
 
         n_shard_rows = pl.scan_parquet(article_shards).select(pl.len()).collect().item()

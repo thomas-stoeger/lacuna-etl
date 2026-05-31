@@ -24,7 +24,13 @@ import re
 
 import pandas as pd
 
-from lacuna_etl.core.identifiers import Doi, PubmedId, RetractionWatchId
+from lacuna_etl.core.identifiers import (
+    Doi,
+    DoiVersioned,
+    PubmedId,
+    RetractionWatchId,
+    split_doi_version_pandas,
+)
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.registry import register
@@ -40,10 +46,12 @@ RETRACTIONS_SCHEMA = {
     "retraction_nature": ColumnSpec(description="Nature of the notice (Retraction, Correction, Expression of concern, Reinstatement, or a ';'-joined combination)"),
     "paywalled": ColumnSpec(description="Whether the retraction notice is behind a paywall"),
     "retraction_date": ColumnSpec(description="Date the retraction/notice was issued"),
-    "retraction_doi": ColumnSpec(identifier=Doi, description="DOI of the retraction notice, if any"),
+    "retraction_doi": ColumnSpec(identifier=Doi, description="DOI of the retraction notice (article-level; any publisher version suffix is split into retraction_doi_versioned), if any"),
+    "retraction_doi_versioned": ColumnSpec(identifier=DoiVersioned, description="Original versioned DOI of the retraction notice when the publisher appends an article version (e.g. F1000 '.N'); null otherwise"),
     "retraction_pmid": ColumnSpec(identifier=PubmedId, description="PubMed ID of the retraction notice, if any"),
     "original_paper_date": ColumnSpec(description="Publication date of the original work"),
-    "original_paper_doi": ColumnSpec(identifier=Doi, description="DOI of the original work, if any"),
+    "original_paper_doi": ColumnSpec(identifier=Doi, description="DOI of the original work (article-level; any publisher version suffix is split into original_paper_doi_versioned), if any"),
+    "original_paper_doi_versioned": ColumnSpec(identifier=DoiVersioned, description="Original versioned DOI of the original work when the publisher appends an article version (e.g. F1000 '.N'); null otherwise"),
     "original_paper_pmid": ColumnSpec(identifier=PubmedId, description="PubMed ID of the original work, if any"),
     "notes": ColumnSpec(description="Free-text notes from Retraction Watch"),
 }
@@ -189,16 +197,24 @@ class RetractionWatchRetractionDatabase(DatasetPipeline):
         parent["paywalled"] = paywalled.map(_PAYWALLED_MAP).astype("boolean")
 
         parent["retraction_date"] = _to_date(df["RetractionDate"])
-        parent["retraction_doi"] = Doi.cast(df["RetractionDOI"].map(_clean_doi).astype("string"))
+        # Split publisher-versioned DOIs (F1000 '.N', Research Square '/vN', ...):
+        # the base DOI stays article-level, the versioned form moves to a sibling.
+        parent["retraction_doi"], parent["retraction_doi_versioned"] = split_doi_version_pandas(
+            Doi.cast(df["RetractionDOI"].map(_clean_doi).astype("string"))
+        )
         parent["retraction_pmid"] = _to_pmid(df["RetractionPubMedID"])
         parent["original_paper_date"] = _to_date(df["OriginalPaperDate"])
-        parent["original_paper_doi"] = Doi.cast(df["OriginalPaperDOI"].map(_clean_doi).astype("string"))
+        parent["original_paper_doi"], parent["original_paper_doi_versioned"] = split_doi_version_pandas(
+            Doi.cast(df["OriginalPaperDOI"].map(_clean_doi).astype("string"))
+        )
         parent["original_paper_pmid"] = _to_pmid(df["OriginalPaperPubMedID"])
         parent["notes"] = _clean_text(df["Notes"])
 
         RetractionWatchId.validate(parent["record_id"])
         Doi.validate(parent["retraction_doi"])
         Doi.validate(parent["original_paper_doi"])
+        DoiVersioned.validate(parent["retraction_doi_versioned"])
+        DoiVersioned.validate(parent["original_paper_doi_versioned"])
         for col in ("retraction_pmid", "original_paper_pmid"):
             self._validate_nullable_pmid(parent[col])
 

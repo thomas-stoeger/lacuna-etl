@@ -11,6 +11,44 @@ if TYPE_CHECKING:
 _DOI_URL_PREFIX = re.compile(r"^https?://(?:doi\.org/)?")
 _WIKIDATA_URL_PREFIX = re.compile(r"^https?://(?:www\.)?wikidata\.org/(?:wiki|entity)/")
 
+# Versioned-DOI detection. A handful of publishers append an *article version* to
+# the article DOI; two records of the same article then differ only by version,
+# which breaks DOI joins. We split those into an article-level base DOI plus the
+# original versioned form. Detection is a curated, registrant-anchored allowlist:
+# a blanket "trailing .N/vN" rule is unsafe because most DOIs legitimately end in
+# numbers (Elsevier page ids, journal 'Viruses' 10.3390/v1010072, arXiv/SSRN ids).
+# Each entry is (article-base pattern, version-suffix pattern), validated against
+# real snapshot data. Add a registrant here to recognise its versions.
+_DOI_VERSION_RULES: list[tuple[str, str]] = [
+    # F1000 platform (F1000Research, Wellcome/Gates/... Open Research): structured
+    # as <journal>.<article>.<version>; the version is a bare .N (or legacy .vN).
+    # The base is anchored to <journal>.<article> (each dotless) so the article
+    # base 10.12688/f1000research.13457 is NOT itself mistaken for a version.
+    (r"10\.12688/[^/\s.]+\.[^/\s.]+", r"\.v?\d+"),
+    (r"10\.21203/\S+", r"/v\d+"),            # Research Square: /vN
+    (r"10\.20944/\S+", r"\.v\d+"),           # Preprints.org: .vN
+    (r"10\.26434/\S+", r"(?:\.v\d+|/v\d+)"), # ChemRxiv: .vN or /vN
+    (r"10\.36227/\S+", r"(?:\.v\d+|/v\d+)"), # TechRxiv: .vN or /vN
+    (r"10\.22541/\S+", r"/v\d+"),            # Authorea / ESSOAr: /vN
+    (r"10\.32388/\S+", r"\.\d{1,2}"),        # Qeios: .N (1-2 digits; a 4-digit year in a slug, e.g. '.../...2025.2', is not a version)
+    # bioRxiv / medRxiv (Cold Spring Harbor): the version is 'vN' appended directly
+    # to the article number with NO separator (10.1101/2023.03.28.534472v2). The
+    # base must be digit-led to exclude the CSH Press journals sharing this
+    # registrant (10.1101/gad..., gr..., sqb..., which are letter-led). A bare
+    # trailing 'vN' is far too common in unrelated DOIs (random ids, GBIF/ICPSR
+    # deposits) to recognise outside this specific registrant.
+    (r"10\.1101/\d[^/\s]*", r"v\d+"),
+]
+# Registrant-anchored GATE: is this a versioned DOI? (string form for polars too.)
+_DOI_VERSIONED_PAT = "(?:" + "|".join(f"(?:{p}){s}" for p, s in _DOI_VERSION_RULES) + ")"
+_DOI_VERSIONED = re.compile(rf"^{_DOI_VERSIONED_PAT}$")
+# Generic trailing version-token strip. Broad, but only ever applied to values the
+# GATE has already accepted, so it safely removes just the final version token.
+# The bare 'vN' alternative is last so separator forms (/vN, .vN, .N) win when
+# present; it only fires for the separator-less bioRxiv/medRxiv form.
+_DOI_VERSION_SUFFIX_PAT = r"(?:/v\d+|\.v\d+|\.\d+|v\d+)$"
+_DOI_VERSION_SUFFIX = re.compile(_DOI_VERSION_SUFFIX_PAT)
+
 
 class Identifier:
     """Base class for column identifier types.
@@ -192,6 +230,13 @@ class GoId(Identifier):
 
 
 class Doi(Identifier):
+    """Article-level DOI: URL prefix stripped, and no publisher version suffix.
+
+    A versioned DOI (F1000 ``.N``/``.vN``, Research Square ``/vN``, etc.) is split
+    into this article-level base plus a sibling ``DoiVersioned`` column; see
+    ``split_version`` and ``_DOI_VERSION_RULES``. ``validate`` enforces that no
+    version suffix survives, so a ``Doi`` column always refers to the article.
+    """
     dtype = pd.StringDtype()
     pattern = r"10\.[^/\s]+/\S+"
 
@@ -202,6 +247,25 @@ class Doi(Identifier):
             return value
         stripped = _DOI_URL_PREFIX.sub("", value).strip()
         return stripped or None
+
+    @classmethod
+    def is_versioned(cls, value: str | None) -> bool:
+        """True if `value` is a recognised versioned DOI (curated registrant + suffix)."""
+        return isinstance(value, str) and _DOI_VERSIONED.match(value) is not None
+
+    @classmethod
+    def split_version(cls, value: str | None) -> tuple[str | None, str | None]:
+        """Split a single DOI into (article_base, versioned_or_None).
+
+        For a recognised versioned DOI, the article base has the version token
+        stripped and the second element keeps the full versioned form. For any
+        other value (including None / non-versioned DOIs) the value passes through
+        unchanged and the second element is None.
+        """
+        if not cls.is_versioned(value):
+            return value, None
+        base = _DOI_VERSION_SUFFIX.sub("", value)
+        return base, value
 
     @classmethod
     def cast(cls, s: pd.Series) -> pd.Series:
@@ -215,6 +279,86 @@ class Doi(Identifier):
         bad = non_null[non_null.str.startswith(("http://", "https://"))]
         if not bad.empty:
             raise ValueError(f"Doi: URL prefix not stripped from {bad.head(5).tolist()}")
+        versioned = non_null[non_null.str.match(_DOI_VERSIONED)]
+        if not versioned.empty:
+            raise ValueError(
+                f"Doi: article DOI carries a version suffix, e.g. {versioned.head(5).tolist()} "
+                f"(split into a sibling DoiVersioned column instead)"
+            )
+
+    @classmethod
+    def validate_polars(cls, s: "pl.Series", *, required: bool = False) -> None:
+        super().validate_polars(s, required=required)
+        import polars as pl
+
+        if s.dtype != pl.String:
+            return
+        non_null = s.drop_nulls()
+        if non_null.len() == 0:
+            return
+        bad = non_null.filter(non_null.str.contains(_DOI_VERSIONED.pattern))
+        if bad.len():
+            raise ValueError(
+                f"Doi: column {s.name!r} has {bad.len()} article DOIs with a version "
+                f"suffix, e.g. {bad.head(5).to_list()} (split into a DoiVersioned column)"
+            )
+
+
+class DoiVersioned(Doi):
+    """Article DOI that MAY carry a publisher version suffix (supports but does not
+    require versioning).
+
+    Same canonical ``10.x/...`` shape and URL stripping as ``Doi``, but the version
+    suffix is allowed: this is the sibling column that preserves the original
+    versioned DOI when ``Doi`` holds the version-stripped article base.
+    """
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[non_null.str.startswith(("http://", "https://"))]
+        if not bad.empty:
+            raise ValueError(f"DoiVersioned: URL prefix not stripped from {bad.head(5).tolist()}")
+
+    @classmethod
+    def validate_polars(cls, s: "pl.Series", *, required: bool = False) -> None:
+        # versions are allowed here, so use the base pattern check only (skip Doi's
+        # version-reject by going straight to Identifier).
+        super(Doi, cls).validate_polars(s, required=required)
+
+
+def doi_base_expr(col: str) -> "pl.Expr":
+    """Polars expr: article-level DOI for `col` (version token stripped on
+    recognised versioned DOIs, all other values passed through unchanged)."""
+    import polars as pl
+
+    c = pl.col(col)
+    return (
+        pl.when(c.str.contains(_DOI_VERSIONED.pattern))
+        .then(c.str.replace(_DOI_VERSION_SUFFIX_PAT, ""))
+        .otherwise(c)
+    )
+
+
+def doi_versioned_expr(col: str) -> "pl.Expr":
+    """Polars expr: the full versioned DOI for `col` on recognised versioned DOIs,
+    null otherwise (the sparse sibling column)."""
+    import polars as pl
+
+    c = pl.col(col)
+    return pl.when(c.str.contains(_DOI_VERSIONED.pattern)).then(c).otherwise(None)
+
+
+def split_doi_version_pandas(s: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """Vectorised pandas split: returns (article_base, versioned_or_null) for a
+    DOI Series. `base` strips the version token on recognised versioned DOIs and
+    passes everything else through; `versioned` is the full DOI where recognised,
+    else null."""
+    s = s.astype("string")
+    is_ver = s.str.match(_DOI_VERSIONED).fillna(False)
+    versioned = s.where(is_ver)
+    base = s.mask(is_ver, s.str.replace(_DOI_VERSION_SUFFIX, "", regex=True))
+    return base, versioned
 
 
 class WikidataId(Identifier):

@@ -6,9 +6,13 @@ linkage lives in its own table so provenance is preserved and consumers can
 opt into the fuzzier matches. Matching is layered, most precise first:
 
   1. pmid          - OpenAlex carries the PMID directly.
-  2. doi           - exact match on normalized DOI.
-  2b. doi_versioned- DOI agrees after stripping a trailing '.N' version suffix
-                     (F1000Research / Wellcome Open Research style).
+  2. doi           - exact match on the (now article-level) DOI. Both upstreams
+                     store the version-stripped article DOI plus a sibling
+                     doi_versioned column, so versioned variants of the same
+                     article (F1000 '.N', Research Square '/vN', ...) already
+                     share a base DOI and match here directly - no re-stripping.
+                     The match is tagged 'doi_versioned' instead of 'doi' when
+                     either side carried a publisher version suffix, else 'doi'.
   3. pmcid         - bare-numeric PMCID match.
   5. title_year    - (title_norm, pub_year) fallback, only against OA records
                      that lack a PMID (anything with a PMID was already caught
@@ -43,17 +47,19 @@ SCHEMA = {
         required=True,
         description=(
             "Rule that produced this link: 'pmid' (OpenAlex carried the PMID), "
-            "'doi' (exact normalized DOI), 'doi_versioned' (DOI agreed after "
-            "stripping a trailing '.N' version suffix), 'pmcid', or "
-            "'title_year' (heuristic; only against OA records lacking a PMID)"
+            "'doi' (exact article-level DOI), 'doi_versioned' (article-level DOI "
+            "agreed where either side carried a publisher version suffix), "
+            "'pmcid', or 'title_year' (heuristic; only against OA records lacking "
+            "a PMID)"
         ),
     ),
 }
 
 
-# DOI normalisation matches the notebook: a URL/`doi:` prefix in any case.
+# DOI normalisation matches the notebook: a URL/`doi:` prefix in any case. Both
+# upstreams already store the article-level DOI (version suffix split off), so
+# this only lower-cases and trims for a case-insensitive join key.
 _DOI_URL_PREFIX_RE = re.compile(r"^\s*(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.IGNORECASE)
-_DOI_VERSION_RE = re.compile(r"\.\d{1,3}$")
 _PMCID_DIGITS_RE = re.compile(r"(\d+)")
 _TITLE_NONWORD_RE = re.compile(r"[^a-z0-9]+")
 
@@ -63,10 +69,6 @@ def _normalize_doi(s: pd.Series) -> pd.Series:
     out = out.str.replace(_DOI_URL_PREFIX_RE, "", regex=True)
     out = out.str.lower()
     return out.mask(out.eq(""))
-
-
-def _strip_doi_version(s: pd.Series) -> pd.Series:
-    return s.astype("string").str.replace(_DOI_VERSION_RE, "", regex=True)
 
 
 def _normalize_pmcid(s: pd.Series) -> pd.Series:
@@ -92,7 +94,7 @@ class PmidOpenalex(DatasetPipeline):
     def _openalex_works_dir(self):
         return get_output_root() / "openalex_works" / "works"
 
-    # ---- stages 1, 2, 2b, 3 (identifier matches) --------------------------
+    # ---- stages 1, 2, 3 (identifier matches) ------------------------------
 
     def extract(self) -> None:
         """Load minimal id columns from both upstreams and run all ID-based
@@ -100,14 +102,14 @@ class PmidOpenalex(DatasetPipeline):
         PMIDs to intermediate parquet so the title-year stage can resume."""
         works = pd.read_parquet(
             self._openalex_works_dir(),
-            columns=["work_id", "pmid", "doi", "pmcid"],
+            columns=["work_id", "pmid", "doi", "doi_versioned", "pmcid"],
         )
         works["pmid"] = works["pmid"].astype("Int64")
         print(f"[{self.name}] openalex works rows: {len(works):,}")
 
         pubmed = pd.read_parquet(
             self._pubmed_articles_path(),
-            columns=["pmid", "pmid_version", "doi", "pmc_id"],
+            columns=["pmid", "pmid_version", "doi", "doi_versioned", "pmc_id"],
         )
         pubmed["pmid"] = pubmed["pmid"].astype("Int64")
         # articles.parquet's grain is (pmid, pmid_version): some journals
@@ -143,50 +145,41 @@ class PmidOpenalex(DatasetPipeline):
         print(f"[{self.name}] stage 1 (pmid): {len(hits):,} hits")
         del pmid_to_work, filled, hits; gc.collect()
 
-        # Stage 2 - exact DOI after normalisation on both sides.
+        # Stage 2 - exact match on the article-level DOI (both upstreams now store
+        # the version-stripped article DOI, so versioned variants of the same
+        # article already share a base DOI and match here). The match is tagged
+        # 'doi_versioned' instead of 'doi' when either side carried a publisher
+        # version suffix (its doi_versioned column is non-null), reconstructing the
+        # old distinction without any fragile re-stripping.
         pubmed["_doi_norm"] = _normalize_doi(pubmed["doi"])
         works["_doi_norm"] = _normalize_doi(works["doi"])
         oa_with_doi = (
-            works.loc[works["_doi_norm"].notna(), ["_doi_norm", "work_id"]]
+            works.loc[works["_doi_norm"].notna(), ["_doi_norm", "work_id", "doi_versioned"]]
                  .sort_values("work_id")
+                 .drop_duplicates(subset="_doi_norm", keep="first")
         )
-        doi_to_work = (
-            oa_with_doi.drop_duplicates(subset="_doi_norm", keep="first")
-                       .set_index("_doi_norm")["work_id"]
-        )
+        doi_to_work = oa_with_doi.set_index("_doi_norm")["work_id"]
+        # base DOI -> did the chosen OA work carry a version suffix?
+        doi_to_oa_versioned = oa_with_doi.set_index("_doi_norm")["doi_versioned"].notna()
         del oa_with_doi
         unmapped = pubmed["work_id"].isna()
         filled = pubmed.loc[unmapped, "_doi_norm"].map(doi_to_work)
         hits = filled.dropna()
         pubmed.loc[hits.index, "work_id"] = hits.values
-        pubmed.loc[hits.index, "match_source"] = "doi"
-        print(f"[{self.name}] stage 2 (doi): {len(hits):,} hits")
-        del doi_to_work, filled, hits; gc.collect()
-
-        # Stage 2b - tolerate F1000-style trailing '.N' DOI version mismatches.
-        # When several OA work_ids share a base, the highest-numbered version
-        # wins (sort _doi_norm desc, keep first); stage 2 above has already
-        # absorbed the cases where the full DOIs agree.
-        pubmed["_doi_base"] = _strip_doi_version(pubmed["_doi_norm"])
-        works["_doi_base"] = _strip_doi_version(works["_doi_norm"])
-        oa_with_base = (
-            works.loc[works["_doi_base"].notna(), ["_doi_base", "_doi_norm", "work_id"]]
-                 .sort_values(["_doi_norm", "work_id"], ascending=[False, True])
+        oa_versioned = pubmed.loc[hits.index, "_doi_norm"].map(doi_to_oa_versioned).fillna(False)
+        pm_versioned = pubmed.loc[hits.index, "doi_versioned"].notna()
+        is_versioned = oa_versioned | pm_versioned
+        pubmed.loc[hits.index, "match_source"] = is_versioned.map(
+            {True: "doi_versioned", False: "doi"}
         )
-        doi_base_to_work = (
-            oa_with_base.drop_duplicates(subset="_doi_base", keep="first")
-                        .set_index("_doi_base")["work_id"]
+        n_ver = int(is_versioned.sum())
+        print(
+            f"[{self.name}] stage 2 (doi): {len(hits):,} hits "
+            f"({n_ver:,} tagged doi_versioned)"
         )
-        del oa_with_base
-        unmapped = pubmed["work_id"].isna() & pubmed["_doi_base"].notna()
-        filled = pubmed.loc[unmapped, "_doi_base"].map(doi_base_to_work)
-        hits = filled.dropna()
-        pubmed.loc[hits.index, "work_id"] = hits.values
-        pubmed.loc[hits.index, "match_source"] = "doi_versioned"
-        print(f"[{self.name}] stage 2b (doi_versioned): {len(hits):,} hits")
-        del doi_base_to_work, filled, hits
-        pubmed.drop(columns=["_doi_norm", "_doi_base"], inplace=True)
-        works.drop(columns=["_doi_norm", "_doi_base"], inplace=True)
+        del doi_to_work, doi_to_oa_versioned, filled, hits, oa_versioned, pm_versioned, is_versioned
+        pubmed.drop(columns=["_doi_norm", "doi_versioned"], inplace=True)
+        works.drop(columns=["_doi_norm", "doi_versioned"], inplace=True)
         gc.collect()
 
         # Stage 3 - PMCID, normalised to bare digits on both sides.
