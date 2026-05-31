@@ -349,7 +349,19 @@ def parse_article(elem: ET.Element) -> dict:
             if rid_list is not None:
                 for rid in rid_list.findall("ArticleId"):
                     if rid.get("IdType") == "pubmed" and rid.text:
-                        ref_pmid = PubmedId.parse(rid.text)
+                        # Reference pubmed ArticleIds are a dirty best-effort field:
+                        # alongside real PMIDs, NCBI emits unresolved-reference
+                        # sentinels (e.g. 'NOT_FOUND;INVALID_JOURNAL') and, rarely,
+                        # ids mislabeled into this slot (e.g. a 'PMC…' id under
+                        # IdType="pubmed"). PubmedId.parse accepts only a positive
+                        # integer; treat anything it rejects as "no resolved link"
+                        # (null) rather than aborting the run — this is a
+                        # cross-reference, not a validated key. The reference itself
+                        # is still kept if it has citation text.
+                        try:
+                            ref_pmid = PubmedId.parse(rid.text)
+                        except ValueError:
+                            ref_pmid = None
                         if ref_pmid is not None:
                             break
             if citation or ref_pmid is not None:
