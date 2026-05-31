@@ -21,6 +21,7 @@ from lacuna_etl.core.identifiers import (
     OpenAlexSubfieldId,
     OpenAlexTopicId,
     OpenAlexWorkId,
+    PubmedId,
 )
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
@@ -57,7 +58,7 @@ _WORKS_SCHEMA = {
     "issue":                             pl.String,
     "first_page":                        pl.String,
     "last_page":                         pl.String,
-    "pmid":                              pl.String,
+    "pmid":                              pl.Int64,
     "pmcid":                             pl.String,
     "created_date":                      pl.String,
     "updated_date":                      pl.String,
@@ -87,7 +88,7 @@ _REFS_SCHEMA = {
 }
 
 
-def _extract_pmid(ids: dict) -> str | None:
+def _extract_pmid(ids: dict) -> int | None:
     return short_pmid(ids.get("pmid"))
 
 
@@ -235,7 +236,7 @@ _WORKS_DOC = {
     "issue":                          ColumnSpec(description="Bibliographic issue"),
     "first_page":                     ColumnSpec(description="First page (string; may be non-numeric)"),
     "last_page":                      ColumnSpec(description="Last page (string; may be non-numeric)"),
-    "pmid":                           ColumnSpec(description="PubMed ID, as a numeric string (no URL prefix)"),
+    "pmid":                           ColumnSpec(identifier=PubmedId, description="PubMed identifier as carried by OpenAlex; sparse — for fuller coverage join the pmid_openalex crosswalk"),
     "pmcid":                          ColumnSpec(description="PubMed Central ID"),
     "created_date":                   ColumnSpec(description="When OpenAlex created this record"),
     "updated_date":                   ColumnSpec(description="Last time OpenAlex modified this record"),

@@ -71,6 +71,34 @@ class NumericIdentifier(Identifier):
     dtype = pd.Int64Dtype()
 
     @classmethod
+    def parse(cls, value: object) -> int | None:
+        """Parse a single source value into a positive Python int, or None.
+
+        Accepts None, ints, and strings. Empty/whitespace-only strings become None.
+        Non-numeric strings, floats, booleans, and non-positive values raise
+        ValueError — there are no silent drops.
+        """
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            raise ValueError(f"{cls.__name__}: refusing to coerce bool: {value!r}")
+        if isinstance(value, int):
+            n = value
+        elif isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return None
+            try:
+                n = int(s)
+            except ValueError as e:
+                raise ValueError(f"{cls.__name__}: not a numeric string: {value!r}") from e
+        else:
+            raise ValueError(f"{cls.__name__}: unsupported type {type(value).__name__}: {value!r}")
+        if n <= 0:
+            raise ValueError(f"{cls.__name__}: IDs must be positive, got {n!r}")
+        return n
+
+    @classmethod
     def validate(cls, s: pd.Series) -> None:
         if not pd.api.types.is_integer_dtype(s):
             raise TypeError(f"{cls.__name__}: expected integer dtype, got {s.dtype}")
@@ -78,6 +106,27 @@ class NumericIdentifier(Identifier):
             raise ValueError(f"{cls.__name__}: unexpected null values")
         if (s <= 0).any():
             raise ValueError(f"{cls.__name__}: IDs must be positive")
+
+    @classmethod
+    def validate_polars(cls, s: "pl.Series", *, required: bool = False) -> None:
+        """Validate an integer polars Series: nulls (if required) and positivity."""
+        import polars as pl
+
+        if not s.dtype.is_integer():
+            raise TypeError(f"{cls.__name__}: expected integer dtype, got {s.dtype}")
+        nulls = s.null_count()
+        if required and nulls > 0:
+            raise ValueError(f"{cls.__name__}: column {s.name!r} has {nulls} nulls (required)")
+        non_null = s.drop_nulls()
+        if non_null.len() == 0:
+            return
+        bad_mask = non_null <= 0
+        n_bad = int(bad_mask.sum())
+        if n_bad:
+            sample = non_null.filter(bad_mask).head(5).to_list()
+            raise ValueError(
+                f"{cls.__name__}: column {s.name!r} has {n_bad} non-positive values, e.g. {sample}"
+            )
 
 
 class NcbiTaxId(NumericIdentifier):
@@ -90,6 +139,50 @@ class NcbiGeneId(NumericIdentifier):
 
 class PubmedId(NumericIdentifier):
     pass
+
+
+class RetractionWatchId(NumericIdentifier):
+    """Retraction Watch internal record identifier (positive Int64).
+
+    Dataset-internal key for the Retraction Watch database; not cross-referenced
+    by other datasets, but validated to the same positive-integer contract.
+    """
+    pass
+
+
+class NlmUniqueId(Identifier):
+    """NLM Catalog unique identifier (``NlmUniqueID``), e.g. ``'101549428'`` or
+    ``'9919253715206676'``.
+
+    Almost always all digits; some older records carry a trailing check letter
+    (``'2984730R'``). Stored as a string rather than an integer because of that
+    letter and because it is an opaque NLM-internal catalog key, not a numeric
+    quantity cross-referenced by other datasets. ``normalize`` strips stray
+    control / whitespace characters (some related-record IDs carry a trailing
+    bidi mark) and returns the value only if it matches the canonical shape,
+    else None.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"\d+[A-Z]?"
+
+    @classmethod
+    def normalize(cls, value: str | None) -> str | None:
+        if value is None or not isinstance(value, str):
+            return None
+        import unicodedata
+
+        cleaned = "".join(ch for ch in value if unicodedata.category(ch)[0] not in ("C", "Z"))
+        cleaned = cleaned.strip()
+        if not cleaned:
+            return None
+        return cleaned if re.fullmatch(r"\d+[A-Z]?", cleaned) else None
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.fullmatch(r"\d+[A-Z]?")]
+        if not bad.empty:
+            raise ValueError(f"NlmUniqueId: malformed values {bad.head(5).tolist()}")
 
 
 class GoId(Identifier):
@@ -235,6 +328,26 @@ class CountryCodeAlpha3(Identifier):
     """ISO 3166-1 alpha-3 country code, e.g. 'USA'."""
     dtype = pd.StringDtype()
     pattern = r"[A-Z]{3}"
+
+
+# --- Open Targets identifier types -----------------------------------------
+
+class EnsemblGeneId(Identifier):
+    """Ensembl gene ID, e.g. 'ENSG00000157764' (human) or 'ENSMUSG00000002111' (mouse).
+
+    Open Targets keys targets on the unversioned Ensembl gene ID. The species infix
+    varies ('' for human, 'MUSG' for mouse, etc.), so the pattern is permissive across
+    species. Cross-species homologue gene IDs are NOT all Ensembl (worm/fly/etc. use
+    WBGene/FBgn), so those columns stay plain strings rather than using this type.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"ENS[A-Z]*G\d+"
+
+
+class ChemblId(Identifier):
+    """ChEMBL molecule ID, e.g. 'CHEMBL25'. Open Targets' canonical drug identifier."""
+    dtype = pd.StringDtype()
+    pattern = r"CHEMBL\d+"
 
 
 # --- OpenAlex identifier types ---------------------------------------------

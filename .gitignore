@@ -215,3 +215,6 @@ scratch/
 
 # Scratch virtual environment
 .venv-scratch/
+
+# AI agent working notes (machine-specific, never committed)
+CLAUDE.local.md
