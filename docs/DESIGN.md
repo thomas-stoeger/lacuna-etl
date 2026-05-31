@@ -133,6 +133,18 @@ downstream repos can join across datasets safely. Canonical forms:
 - **Country code** — ISO 3166-1 alpha-2 (and alpha-3 where noted).
 - **OpenAlex IDs** — short form (`W2741809807`, `A...`, `I...`, etc.), URL prefix
   stripped, to normalize and to save space across hundreds of millions of rows.
+- **Ensembl Gene ID** — unversioned `ENS…G\d+`; the species infix varies (`ENSG…`
+  human, `ENSMUSG…` mouse), so the pattern is permissive across species. Open
+  Targets' canonical key for a target. Cross-species *homologue* gene IDs are not
+  all Ensembl (worm/fly use `WBGene`/`FBgn`), so those columns stay plain strings.
+- **ChEMBL ID** — `CHEMBL\d+`; Open Targets' canonical drug-molecule identifier.
+
+Some machine-generated identifiers are intentionally *not* given a canonical
+identifier type and are stored as documented plain strings, following the
+PubTator precedent: Open Targets disease/phenotype IDs are heterogeneous CURIEs
+(`EFO_…`, `MONDO_…`, `HP_…`, `Orphanet_…`, `MP:…`) with no single canonical form,
+so `disease_id` and the ontology-edge columns are plain strings (required where
+they are a key) rather than a fragile catch-all pattern.
 
 Patterns are stored unanchored on each identifier and anchored at validation
 time. Empty and whitespace-only strings are normalized to null (an OpenAlex
@@ -197,6 +209,46 @@ can grow between PubTator releases, so a new value should not abort a run. The
 concept `identifier` is stored exactly as PubTator emits it (heterogeneous by
 type, and a packed composite for variants), so it is a plain string rather than a
 single canonical identifier type.
+
+Open Targets (6 datasets, streaming per-Parquet-file; one registered pipeline per
+downloaded product, named `opentargets_<product>`): the Platform ships each
+product as a directory of Parquet part files, so the unit of work is one part file
+processed into per-table shards (restartable via a shard-exists check), and the
+transform is columnar Polars (unnest structs, explode lists) rather than row-wise.
+Outputs follow the OpenAlex sharded layout (`<dataset>/<table>/<part>.parquet`
+plus `<table>.yml`). Tables are fully exploded — a parent table per product plus a
+child table per repeated/nested field, keyed by the parent ID:
+
+- `opentargets_target` (key Ensembl gene ID): `targets` plus `targets_transcripts`,
+  `targets_go`, `targets_synonyms` (current and obsolete symbol/name synonyms,
+  tagged by `synonym_type`), `targets_subcellular_locations`, `targets_classes`,
+  `targets_constraints`, `targets_protein_ids`, `targets_db_xrefs`,
+  `targets_pathways`, `targets_tractability`, `targets_homologues`,
+  `targets_chemical_probes` (+ `targets_chemical_probe_urls`),
+  `targets_safety_liabilities` (+ `targets_safety_effects`,
+  `targets_safety_biosamples`, `targets_safety_studies`, linked by
+  `liability_index`), `targets_hallmark_attributes`, and `targets_cancer_hallmarks`.
+- `opentargets_disease` (key disease/EFO ID): `diseases` plus `diseases_synonyms`
+  (tagged by `synonym_scope`), the ontology-edge tables `diseases_parents`,
+  `diseases_children`, `diseases_ancestors`, `diseases_descendants`,
+  `diseases_therapeutic_areas`, `diseases_xrefs`, `diseases_obsolete_terms`,
+  `diseases_obsolete_xrefs`, and `diseases_ontology_sources`.
+- `opentargets_drug_molecule` (key ChEMBL ID): `drugs` (with trade-name, synonym,
+  and child-ChEMBL-ID list columns) plus `drugs_cross_references`.
+- `opentargets_association_overall_direct` (key target+disease): `associations`
+  (overall direct target-disease score) plus `associations_timeseries` (per-year
+  score/novelty/evidence points).
+- `opentargets_target_essentiality` (key Ensembl gene ID): `target_essentiality`
+  (per-gene essentiality) plus `target_essentiality_screens` (one row per DepMap
+  cell-line screen, flattened across `geneEssentiality → depMapEssentiality →
+  screens`).
+- `opentargets_mouse_phenotype` (key human Ensembl gene ID): `mouse_phenotypes`
+  plus `mouse_phenotype_classes` and `mouse_phenotype_models`.
+
+As with PubTator, the many machine-generated category columns (biotype, GO aspect
+and evidence, homology type, tractability modality, drug type, aggregation type,
+etc.) are documented free strings rather than `allowed_values`-constrained, so a
+new value in a future release does not abort a run.
 
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):

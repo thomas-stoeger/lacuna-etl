@@ -286,6 +286,26 @@ class CountryCodeAlpha3(Identifier):
     pattern = r"[A-Z]{3}"
 
 
+# --- Open Targets identifier types -----------------------------------------
+
+class EnsemblGeneId(Identifier):
+    """Ensembl gene ID, e.g. 'ENSG00000157764' (human) or 'ENSMUSG00000002111' (mouse).
+
+    Open Targets keys targets on the unversioned Ensembl gene ID. The species infix
+    varies ('' for human, 'MUSG' for mouse, etc.), so the pattern is permissive across
+    species. Cross-species homologue gene IDs are NOT all Ensembl (worm/fly/etc. use
+    WBGene/FBgn), so those columns stay plain strings rather than using this type.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"ENS[A-Z]*G\d+"
+
+
+class ChemblId(Identifier):
+    """ChEMBL molecule ID, e.g. 'CHEMBL25'. Open Targets' canonical drug identifier."""
+    dtype = pd.StringDtype()
+    pattern = r"CHEMBL\d+"
+
+
 # --- OpenAlex identifier types ---------------------------------------------
 
 class OpenAlexId(Identifier):
