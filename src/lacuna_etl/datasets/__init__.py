@@ -13,5 +13,6 @@ from lacuna_etl.datasets import predatory_journals as ___________  # noqa: F401
 from lacuna_etl.datasets import predatory_publishers as ____________  # noqa: F401
 from lacuna_etl.datasets import retractionwatch_hijackedjournals as _____________  # noqa: F401
 from lacuna_etl.datasets import retractionwatch_retractiondatabase as ______________  # noqa: F401
+from lacuna_etl.datasets import ncbi_nlmcatalog_reportedmedline as _______________  # noqa: F401
 
 __all__ = ["REGISTRY", "register"]

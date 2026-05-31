@@ -150,6 +150,41 @@ class RetractionWatchId(NumericIdentifier):
     pass
 
 
+class NlmUniqueId(Identifier):
+    """NLM Catalog unique identifier (``NlmUniqueID``), e.g. ``'101549428'`` or
+    ``'9919253715206676'``.
+
+    Almost always all digits; some older records carry a trailing check letter
+    (``'2984730R'``). Stored as a string rather than an integer because of that
+    letter and because it is an opaque NLM-internal catalog key, not a numeric
+    quantity cross-referenced by other datasets. ``normalize`` strips stray
+    control / whitespace characters (some related-record IDs carry a trailing
+    bidi mark) and returns the value only if it matches the canonical shape,
+    else None.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"\d+[A-Z]?"
+
+    @classmethod
+    def normalize(cls, value: str | None) -> str | None:
+        if value is None or not isinstance(value, str):
+            return None
+        import unicodedata
+
+        cleaned = "".join(ch for ch in value if unicodedata.category(ch)[0] not in ("C", "Z"))
+        cleaned = cleaned.strip()
+        if not cleaned:
+            return None
+        return cleaned if re.fullmatch(r"\d+[A-Z]?", cleaned) else None
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.fullmatch(r"\d+[A-Z]?")]
+        if not bad.empty:
+            raise ValueError(f"NlmUniqueId: malformed values {bad.head(5).tolist()}")
+
+
 class GoId(Identifier):
     """Gene Ontology term ID, e.g. 'GO:0008150'."""
     dtype = pd.StringDtype()
