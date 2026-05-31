@@ -210,6 +210,56 @@ concept `identifier` is stored exactly as PubTator emits it (heterogeneous by
 type, and a packed composite for variants), so it is a plain string rather than a
 single canonical identifier type.
 
+NLM Catalog — journals reported to MEDLINE (`ncbi_nlmcatalog_reportedmedline`,
+pandas; one large `NLMCatalogRecordSet` XML, ~15.5k serial records). Parsed in a
+single `iterparse` pass. The parent key is `nlm_unique_id`
+(`NlmUniqueId`: the NLM Catalog `NlmUniqueID`, an opaque catalog key stored as a
+string — almost all digits, some older IDs carry a trailing check letter such as
+`2984730R`, so it is not an integer). Eight tables, the parent plus seven
+children keyed by `nlm_unique_id`:
+
+- `journals` — one row per record: titles (`title_main`, `medline_ta`),
+  convenience `issn_print` / `issn_electronic` (first of each medium; full set in
+  `journal_issns`), country/publisher, `publication_first_year` /
+  `publication_end_year` (`Int64`; the `9999` "continuing" sentinel becomes null
+  and sets `is_ongoing_publication`), the four catalog dates, `record_status`,
+  and `currently_indexed_medline` (any MEDLINE-lineage source with status
+  `Currently-indexed`).
+- `journal_issns` — one row per `(nlm_unique_id, issn, issn_type)`; ISSNs
+  normalized to canonical `IssnL` form, `issn_type` ∈ {`Print`, `Electronic`,
+  `Undetermined`}.
+- `journal_alternate_titles`, `journal_languages`, `journal_mesh_headings` —
+  the exploded `TitleAlternate`, `Language`, and MeSH `DescriptorName` lists.
+- `journal_relations` — one row per `TitleRelated` link, the journal
+  split/merge/continuation lineage: `relation_type` (`Preceding`, `Succeeding`,
+  `MergedTo`, `MergerOf`, `SplitTo`, `SplitFrom`, `Absorbed`, `Supersedes`,
+  `Translated`, … — a documented free string, the vocabulary can grow) and
+  `related_nlm_unique_id`, which joins back to `journals.nlm_unique_id` when NLM
+  recorded one (else null; non-conforming related IDs are nulled, not dropped).
+- `indexing_coverage` — one row per parsed indexing *frame*, keyed by
+  `(nlm_unique_id, source_index, frame_index)`: the `indexing_source` (MEDLINE,
+  OLDMEDLINE, Index medicus, PubMed, PMC, …; case variants of MEDLINE/PubMed
+  normalized, otherwise verbatim — a documented free string), `is_medline_indexing`
+  (the MEDLINE / Index Medicus indexing lineage, vs PubMed deposit / PMC /
+  reference works), `indexing_treatment`, `indexing_status`, the verbatim
+  `coverage_raw`, and `start_year` / `end_year` / `ongoing` recovered from it.
+- `indexed_years` — one row per `(nlm_unique_id, indexing_source, year)`: the
+  coverage frames exploded to the individual years a journal was indexed, the
+  table this dataset exists to produce.
+
+  The `Coverage` strings are historically grown free text with inconsistent
+  human formatting and can encode disjoint frames (a journal de-indexed then
+  re-indexed). Rather than parse every volume/issue/month token, the parser
+  recovers only the years: it splits disjoint frames on `;`, truncates appended
+  notes ("selected citations only before this date"), and reads the first and
+  last four-digit year of each frame as its span — robust against the hyphens
+  *inside* dates (`Jan.-Feb.`, `v25n3-4`, `1980-81`) because it never splits on
+  `-`. A frame ending in an open `-` is flagged `ongoing`, and in `indexed_years`
+  such frames are expanded through the snapshot's year (so the open end is
+  recoverable from `indexing_coverage.ongoing` but materialized to "present" in
+  the per-year explosion). `indexed_years` covers **all** indexing sources;
+  consumers filter on `is_medline_indexing` for true MEDLINE indexing.
+  
 Open Targets (6 datasets, streaming per-Parquet-file; one registered pipeline per
 downloaded product, named `opentargets_<product>`): the Platform ships each
 product as a directory of Parquet part files, so the unit of work is one part file
@@ -258,6 +308,32 @@ snapshots):
   `doi_versioned`, `pmcid`, or `title_year`). `depends_on` both
   `ncbi_pubmed` and `openalex_works`; unmatched PMIDs are not in the table, so
   consumers left-join from `articles` when they need them.
+
+Research-integrity lists (pandas; small in-memory CSV sources):
+
+- `predatory_journals` → `predatory_journals` and `predatory_publishers` →
+  `predatory_publishers` (Beall's-list-style name lists). The source is a
+  headerless two-column CSV (`row number, name`); the cleaned output is a single
+  `title` column, one row per distinct name.
+- `retractionwatch_hijackedjournals` → `hijacked_journals` (one row per
+  hijacked/clone record: `record_id`, hijacked vs. original titles and URLs) and
+  `hijacked_journal_issns` (one row per `(record_id, role, issn)`; the source's
+  comma-separated ISSN fields are split and normalized to canonical ISSN form,
+  with `role` ∈ {`hijacked`, `original`}). The source CSV's first record is a
+  donation banner, so the real header is its second record.
+- `retractionwatch_retractiondatabase` → parent `retractions` (one row per
+  Retraction Watch `record_id`: titles, journal/publisher, dates, retraction and
+  original-paper DOIs/PMIDs, `retraction_nature`, `article_type`, `paywalled`,
+  `notes`) plus child tables that explode the source's `;`-delimited fields, each
+  keyed by `record_id`: `retraction_reasons`, `retraction_subjects`,
+  `retraction_authors`, `retraction_countries`, `retraction_institutions`,
+  `retraction_urls`. PubMed IDs use `0`/blank for "missing" (mapped to null);
+  DOIs use `unavailable`/blank for "missing" and are repaired to canonical form,
+  with unrecoverable values set to null. `record_id` is a positive `Int64`
+  (`RetractionWatchId`), a dataset-internal key not cross-referenced elsewhere;
+  a small fraction of source rows (~0.4%) carry no Record ID and, since it is the
+  parent key and every child's join key, those rows are excluded with the count
+  reported at transform time rather than dropped silently or given a fabricated id.
 
 ## Invariants the ETL guarantees
 
