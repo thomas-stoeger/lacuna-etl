@@ -1,4 +1,5 @@
 from lacuna_etl.datasets.registry import REGISTRY, register
+from lacuna_etl.datasets import harmonizome as ________  # noqa: F401
 from lacuna_etl.datasets import icite as _  # noqa: F401
 from lacuna_etl.datasets import ncbi_nlmcatalog_reportedmedline as _______________  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene2go as __  # noqa: F401
