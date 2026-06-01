@@ -155,6 +155,11 @@ downstream repos can join across datasets safely. Canonical forms:
   Targets' canonical key for a target. Cross-species *homologue* gene IDs are not
   all Ensembl (worm/fly use `WBGene`/`FBgn`), so those columns stay plain strings.
 - **ChEMBL ID** — `CHEMBL\d+`; Open Targets' canonical drug-molecule identifier.
+- **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix
+  (some sources, e.g. Ensembl's TSV dumps, drop the version): the curated/predicted
+  transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS *genomic* RefSeq
+  accessions interleave letters after the prefix (`NZ_MCBT01000001.1`) and so do
+  *not* use this type — columns that can hold those stay plain strings.
 - **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix: the
   curated/predicted transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS
   *genomic* RefSeq accessions interleave letters after the prefix
@@ -213,6 +218,29 @@ NCBI gene tables (pandas; all `depends_on = ncbi_gene_history`):
   gene list, an accession dump can still reference a gene since discontinued
   *without* a replacement; those rows (2 in the current snapshot) are dropped and
   the count is logged, rather than hard-erroring the run.
+
+Ensembl cross-references (`ensembl_tsv`, pandas; the per-species "Stable ID to
+&lt;db&gt;" TSV dumps, restricted upstream to eight reference organisms — human,
+mouse, rat, zebrafish, fly, worm, chicken, yeast — with a `tax_id` column added
+from the species directory). One table per external-database dump, each a faithful
+one-row-per-source-mapping projection:
+
+- `entrez` — Ensembl gene/transcript/protein ↔ NCBI. `xref` is a plain string
+  because the dump mixes Entrez Gene IDs (`db_name='EntrezGene'`) with Entrez
+  transcript *names* (`db_name='EntrezGene_trans_name'`).
+- `refseq` — Ensembl ↔ RefSeq; `refseq_accession` typed `RefSeqAccession`,
+  `db_name` gives the molecule type (mRNA/peptide/ncRNA, curated or predicted).
+- `uniprot` — Ensembl ↔ UniProt; `uniprot_accession` plain string (`db_name`
+  separates SWISSPROT / SPTREMBL / isoform).
+- `ena` — Ensembl ↔ ENA/INSDC; `primary_accession` / `secondary_accession` plain
+  strings (the primary column also carries clone/contig/chromosome labels).
+
+The `ensembl_gene_id` / `ensembl_transcript_id` / `ensembl_protein_id` columns are
+**plain strings, not `EnsemblGeneId`-typed**: only the five vertebrates use `ENS…`
+stable IDs, while yeast (SGD `YDL246C`), worm (WormBase `WBGene…`), and fly
+(FlyBase `FBgn…`/`FBtr…`/`FBpp…`) use species-native IDs, so no single canonical
+Ensembl pattern holds across the species set. The chromosome-length `karyotype`
+dumps are not ingested (genome metadata, not a cross-reference).
 
 iCite (pandas):
 
