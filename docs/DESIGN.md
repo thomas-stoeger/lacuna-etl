@@ -242,6 +242,19 @@ stable IDs, while yeast (SGD `YDL246C`), worm (WormBase `WBGene…`), and fly
 Ensembl pattern holds across the species set. The chromosome-length `karyotype`
 dumps are not ingested (genome metadata, not a cross-reference).
 
+NCBI Taxonomy (`ncbi_taxdump`, pandas; the full reference tree, no organism
+filter): parsed from the pipe-delimited `.dmp` members read directly out of
+`taxdump.tar.gz`. Three tables:
+
+- `taxonomy_nodes` — one row per `tax_id`: `parent_tax_id` (the root node 1 is its
+  own parent), `rank`, `division_id`, `genetic_code_id`.
+- `taxonomy_names` — one row per `(tax_id, name, name_class)`: the `name`, its
+  disambiguated `unique_name` (null when `name` is already unique), and the
+  `name_class` (`scientific name`, `synonym`, `authority`, `genbank common name`,
+  …; a documented free string — the vocabulary can grow between releases).
+- `taxonomy_merged` — one row per `old_tax_id`: the `new_tax_id` a since-merged
+  taxon now resolves to (analogous to `gene_history` for Gene IDs).
+
 iCite (pandas):
 
 - `icite` → `icite` (one row per PMID, citation metrics) and
