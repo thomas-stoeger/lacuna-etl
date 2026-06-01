@@ -198,6 +198,21 @@ NCBI gene tables (pandas; all `depends_on = ncbi_gene_history`):
   plain strings (version-stripped to the unversioned canonical form) because they
   are species-native — vertebrates use `ENS…` but fly uses FlyBase `FBgn/FBtr/FBpp`,
   so no single Ensembl pattern holds.
+- `ncbi_gene2accession` → `gene2accession` (one row per gene/accession-set line),
+  restricted to the reference model organisms (both yeast taxa, 4932 and 559292,
+  appear). The genome-wide ~4 GB source is read once with Polars and filtered to
+  the model taxa into a restartable intermediate, then transformed in pandas.
+  `tax_id` + `entrez_id` typed; `status` (RefSeq curation lifecycle, `-` for
+  non-RefSeq rows) and `orientation` (`+`/`-`/`?`) carry `allowed_values`; the GI
+  and position columns are `Int64`. The RNA / protein / genomic / mature-peptide
+  `accession.version` columns are **plain strings**: each mixes RefSeq with GenBank
+  (and the genomic column also WGS `NZ_…`) accessions, so no single canonical
+  identifier form holds. Here `-` is the missing marker for the accession/GI/
+  position/assembly/symbol columns but a *real value* for `status` (non-RefSeq) and
+  `orientation` (minus strand), so it is nulled selectively. Unlike the current
+  gene list, an accession dump can still reference a gene since discontinued
+  *without* a replacement; those rows (2 in the current snapshot) are dropped and
+  the count is logged, rather than hard-erroring the run.
 
 iCite (pandas):
 
