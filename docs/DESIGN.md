@@ -155,6 +155,11 @@ downstream repos can join across datasets safely. Canonical forms:
   Targets' canonical key for a target. Cross-species *homologue* gene IDs are not
   all Ensembl (worm/fly use `WBGene`/`FBgn`), so those columns stay plain strings.
 - **ChEMBL ID** — `CHEMBL\d+`; Open Targets' canonical drug-molecule identifier.
+- **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix: the
+  curated/predicted transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS
+  *genomic* RefSeq accessions interleave letters after the prefix
+  (`NZ_MCBT01000001.1`) and so do *not* use this type — columns that can hold those
+  stay plain strings.
 
 Some machine-generated identifiers are intentionally *not* given a canonical
 identifier type and are stored as documented plain strings, following the
@@ -185,6 +190,14 @@ NCBI gene tables (pandas; all `depends_on = ncbi_gene_history`):
   pipe-joined PubMed list is exploded to one PMID per row).
 - `ncbi_gene2pubmed` → `gene2pubmed` (one row per gene/PubMed link).
 - `ncbi_generifs` → `gene_rif` (Gene Reference into Function statements).
+- `ncbi_gene2ensembl` → `gene2ensembl` (one row per NCBI↔Ensembl gene/transcript/
+  protein mapping line). Restricted to the eight reference model organisms (worm
+  and yeast are absent from the snapshot). `tax_id` + `entrez_id` typed; the paired
+  `refseq_rna_accession` / `refseq_protein_accession` typed `RefSeqAccession`. The
+  `ensembl_gene_id` / `ensembl_transcript_id` / `ensembl_protein_id` columns are
+  plain strings (version-stripped to the unversioned canonical form) because they
+  are species-native — vertebrates use `ENS…` but fly uses FlyBase `FBgn/FBtr/FBpp`,
+  so no single Ensembl pattern holds.
 - `ncbi_gene2accession` → `gene2accession` (one row per gene/accession-set line),
   restricted to the reference model organisms (both yeast taxa, 4932 and 559292,
   appear). The genome-wide ~4 GB source is read once with Polars and filtered to

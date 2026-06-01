@@ -7,6 +7,7 @@ from lacuna_etl.datasets import ncbi_gene2pubmed as ___  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene_history as ____  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene_info as _____  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene_rif as ______  # noqa: F401
+from lacuna_etl.datasets import ncbi_gene2ensembl as _ncbi_gene2ensembl  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene2accession as _ncbi_gene2accession  # noqa: F401
 from lacuna_etl.datasets import openalex as _______  # noqa: F401
 from lacuna_etl.datasets import opentargets as ___________  # noqa: F401
