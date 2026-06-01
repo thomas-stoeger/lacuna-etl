@@ -494,6 +494,22 @@ class ChemblId(Identifier):
     pattern = r"CHEMBL\d+"
 
 
+# --- NCBI sequence accession types -----------------------------------------
+
+class RefSeqAccession(Identifier):
+    """RefSeq molecule accession, e.g. 'NM_000546' or 'NP_000537.3'.
+
+    Two-letter molecule-type prefix + '_' + digits, with an optional
+    '.<version>' suffix (some sources, e.g. Ensembl's TSV dumps, drop the
+    version). Covers the curated/predicted transcript and protein accessions
+    NM/NR/XM/XR/NP/XP/YP. NOTE: WGS *genomic* RefSeq accessions interleave letters
+    after the prefix (e.g. 'NZ_MCBT01000001.1') and do NOT match this pattern, so
+    columns that can hold those stay plain strings rather than using this type.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"[A-Z]{2}_\d+(\.\d+)?"
+
+
 # --- OpenAlex identifier types ---------------------------------------------
 
 class OpenAlexId(Identifier):
