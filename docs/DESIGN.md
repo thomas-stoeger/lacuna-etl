@@ -352,13 +352,22 @@ children keyed by `nlm_unique_id`:
   consumers filter on `is_medline_indexing` for true MEDLINE indexing.
   
 Open Targets (6 datasets, streaming per-Parquet-file; one registered pipeline per
+Open Targets (55 datasets, streaming per-Parquet-file; one registered pipeline per
 downloaded product, named `opentargets_<product>`): the Platform ships each
 product as a directory of Parquet part files, so the unit of work is one part file
 processed into per-table shards (restartable via a shard-exists check), and the
 transform is columnar Polars (unnest structs, explode lists) rather than row-wise.
 Outputs follow the OpenAlex sharded layout (`<dataset>/<table>/<part>.parquet`
-plus `<table>.yml`). Tables are fully exploded — a parent table per product plus a
-child table per repeated/nested field, keyed by the parent ID:
+plus `<table>.yml`). The default shape is fully exploded — a parent table per
+product plus a child table per repeated/nested field, keyed by the parent ID.
+List-of-scalar fields are kept as list columns on the parent (matching how `target`
+keeps `transcript_ids` etc.); `List(Struct)` fields become child tables. Two
+products whose source rows have no stable key (`interaction_evidence`,
+`pharmacogenomics`) cannot key child tables, so their nested structs are instead
+flattened in place (parallel list columns, or denormalised onto one row per nested
+element); this exception is noted on each below.
+
+**Core annotated entities.**
 
 - `opentargets_target` (key Ensembl gene ID): `targets` plus `targets_transcripts`,
   `targets_go`, `targets_synonyms` (current and obsolete symbol/name synonyms,
@@ -369,27 +378,118 @@ child table per repeated/nested field, keyed by the parent ID:
   `targets_safety_liabilities` (+ `targets_safety_effects`,
   `targets_safety_biosamples`, `targets_safety_studies`, linked by
   `liability_index`), `targets_hallmark_attributes`, and `targets_cancer_hallmarks`.
+- `opentargets_target_essentiality` (key Ensembl gene ID): `target_essentiality`
+  (per-gene essentiality) plus `target_essentiality_screens` (one row per DepMap
+  cell-line screen, flattened across `geneEssentiality → depMapEssentiality →
+  screens`).
+- `opentargets_target_prioritisation` (key Ensembl gene ID): `target_prioritisation`,
+  one row per gene of per-property prioritisation flags (0/1/-1 integer indicators)
+  and continuous scores.
+- `opentargets_expression` (key Ensembl gene ID): `expression_tissues` (one row per
+  gene × tissue, RNA + protein summary levels) plus `expression_protein_cell_types`
+  (per gene × tissue, protein level by cell type).
 - `opentargets_disease` (key disease/EFO ID): `diseases` plus `diseases_synonyms`
   (tagged by `synonym_scope`), the ontology-edge tables `diseases_parents`,
   `diseases_children`, `diseases_ancestors`, `diseases_descendants`,
   `diseases_therapeutic_areas`, `diseases_xrefs`, `diseases_obsolete_terms`,
   `diseases_obsolete_xrefs`, and `diseases_ontology_sources`.
+- `opentargets_disease_hpo` (key HPO term ID): `hpo_terms` plus `hpo_terms_xrefs`,
+  `hpo_terms_parents`, `hpo_terms_obsolete_terms`.
+- `opentargets_disease_phenotype` (key disease+phenotype): `disease_phenotypes`
+  plus `disease_phenotype_evidence` (one row per supporting HPOA evidence record).
+- `opentargets_biosample` (key biosample ontology ID): `biosamples` plus
+  `biosamples_synonyms`, `biosamples_xrefs`, and the edge tables
+  `biosamples_parents`/`_children`/`_ancestors`/`_descendants`.
+- `opentargets_go` (key GO ID): `go_terms` plus `go_terms_alt_ids` and the relation
+  edge tables `go_terms_is_a`, `go_terms_part_of`, `go_terms_regulates`,
+  `go_terms_negatively_regulates`, `go_terms_positively_regulates`.
+- `opentargets_so` (key SO ID): `so_terms` (Sequence Ontology ID + label).
+
+**Drugs.**
+
 - `opentargets_drug_molecule` (key ChEMBL ID): `drugs` (with trade-name, synonym,
   and child-ChEMBL-ID list columns) plus `drugs_cross_references`.
-- `opentargets_association_overall_direct` (key target+disease): `associations`
-  (overall direct target-disease score) plus `associations_timeseries` (per-year
-  score/novelty/evidence points).
-- `opentargets_target_essentiality` (key Ensembl gene ID): `target_essentiality`
-  (per-gene essentiality) plus `target_essentiality_screens` (one row per DepMap
-  cell-line screen, flattened across `geneEssentiality → depMapEssentiality →
-  screens`).
-- `opentargets_mouse_phenotype` (key human Ensembl gene ID): `mouse_phenotypes`
-  plus `mouse_phenotype_classes` and `mouse_phenotype_models`.
+- `opentargets_drug_mechanism_of_action` (key ChEMBL ID; source rows are keyless so
+  the mechanism is exploded by the molecules it applies to): `drug_mechanisms` plus
+  `drug_mechanism_references`.
+- `opentargets_drug_warning` (key warning ID): `drug_warnings` plus
+  `drug_warnings_chembl_ids` and `drug_warnings_references`.
+- `opentargets_openfda_significant_adverse_drug_reactions` (key ChEMBL ID + event):
+  `drug_adverse_reactions` (FAERS disproportionality LLR signals).
+- `opentargets_pharmacogenomics` (keyless): a single `pharmacogenomics` table
+  denormalised to one row per (evidence, variant annotation); the associated drugs
+  are flattened into parallel list columns.
+
+**Clinical.**
+
+- `opentargets_clinical_indication` (key indication ID): `clinical_indications`
+  (drug → disease at a max clinical stage).
+- `opentargets_clinical_target` (key record ID): `clinical_targets` plus
+  `clinical_targets_diseases`.
+- `opentargets_clinical_report` (key report ID): `clinical_reports` plus
+  `clinical_reports_drugs`, `clinical_reports_diseases`,
+  `clinical_reports_side_effects`.
+
+**Target–disease associations.** Six products of identical shape — `overall`,
+`by_datatype`, `by_datasource`, each in a `direct` and `indirect` flavour
+(`indirect` propagates evidence up the disease ontology). Each emits `associations`
+(keyed target+disease, with the datatype/datasource in `aggregation_value` for the
+non-overall variants) plus `associations_timeseries` (per-year score/novelty/
+evidence points): `opentargets_association_overall_direct`,
+`opentargets_association_overall_indirect`,
+`opentargets_association_by_datatype_direct`,
+`opentargets_association_by_datatype_indirect`,
+`opentargets_association_by_datasource_direct`,
+`opentargets_association_by_datasource_indirect`.
+
+**Evidence.** Twenty `opentargets_evidence_<source>` products, each keyed by the
+evidence record `id`, sharing a common `evidence` parent table (provenance envelope
+plus the source-specific scalar / list-scalar columns) and adding child tables only
+where the source carries `List(Struct)` fields: `cancer_biomarkers` (+ `evidence_urls`,
+`evidence_biomarkers_gene_expression`, `evidence_biomarkers_genetic_variation`),
+`cancer_gene_census` (+ `evidence_mutated_samples`), `clingen` (+ `evidence_urls`),
+`clinical_precedence`, `crispr` (+ `evidence_disease_cell_lines`), `crispr_screen`,
+`europepmc` (+ `evidence_sentences`), `eva`, `eva_somatic`, `expression_atlas`,
+`gene2phenotype`, `gene_burden` (+ `evidence_urls`), `genomics_england`,
+`gwas_credible_sets`, `impc` (+ `evidence_model_phenotypes`,
+`evidence_human_phenotypes`), `intogen` (+ `evidence_mutated_samples`), `orphanet`,
+`reactome` (+ `evidence_pathways`), `uniprot_literature`, `uniprot_variants`.
+
+**Genetics (GWAS / variants / QTLs).**
+
+- `opentargets_study` (key study ID): `studies` plus `studies_discovery_samples`,
+  `studies_replication_samples`, `studies_ld_populations`, `studies_sumstat_qc`.
+- `opentargets_variant` (key variant ID, `chrom_pos_ref_alt`): `variants` plus
+  `variants_effects`, `variants_transcript_consequences`,
+  `variants_allele_frequencies`, `variants_db_xrefs`.
+- `opentargets_credible_set` (key study-locus ID): `credible_sets` plus
+  `credible_sets_locus` (member variants with posterior probabilities) and
+  `credible_sets_ld` (LD tag variants).
+- `opentargets_colocalisation` (key left+right study-locus): `colocalisations`
+  (pairwise COLOC/eCAVIAR results between credible sets).
+- `opentargets_l2g_prediction` (key study-locus + gene): `l2g_predictions` plus
+  `l2g_prediction_features` (per-prediction SHAP feature contributions).
+- `opentargets_enhancer_to_gene` (key interval ID): `enhancer_gene_predictions`
+  plus `enhancer_gene_prediction_scores`.
+
+**Interactions and literature.**
+
+- `opentargets_interaction` (key A+B+source): `interactions` (aggregated molecular
+  interactions; species structs unnested into prefixed columns).
+- `opentargets_interaction_evidence` (keyless): a single `interaction_evidences`
+  table; species/resource/tissue structs are unnested into prefixed columns and the
+  participant-detection-method struct lists are flattened into parallel list columns.
+- `opentargets_literature` (key publication + keyword): `literature`. `pmid` is a
+  documented plain string, not a `PubmedId`, because Europe PMC contributes non-PubMed
+  `IND...` identifiers.
+- `opentargets_literature_vector` (key category + word): `literature_vectors`
+  (word2vec embeddings; the embedding stays a list-of-float column).
 
 As with PubTator, the many machine-generated category columns (biotype, GO aspect
 and evidence, homology type, tractability modality, drug type, aggregation type,
-etc.) are documented free strings rather than `allowed_values`-constrained, so a
-new value in a future release does not abort a run.
+datasource/datatype IDs, clinical stage, etc.) are documented free strings rather
+than `allowed_values`-constrained, so a new value in a future release does not abort
+a run.
 
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):

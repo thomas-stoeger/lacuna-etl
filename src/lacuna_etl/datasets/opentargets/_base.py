@@ -117,19 +117,33 @@ class OpenTargetsProductPipeline(DatasetPipeline):
         worker_args = [(str(f), str(out_dir), self.transform_module) for f in pending]
         total_records = 0
         t0 = time.time()
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(_process_file, a): a[0] for a in worker_args}
+        if workers <= 1:
+            # Serial in-process path: avoids ProcessPoolExecutor entirely, which
+            # some sandboxes block (POSIX-semaphore syscalls denied at pool init).
             with tqdm(total=len(pending), unit="file") as pbar:
-                for future in as_completed(futures):
-                    src = futures[future]
+                for a in worker_args:
                     try:
-                        _, n_records = future.result()
+                        _, n_records = _process_file(a)
                         total_records += n_records
                     except Exception as e:
-                        print(f"\nERROR [{src}]: {e}", file=sys.stderr)
+                        print(f"\nERROR [{a[0]}]: {e}", file=sys.stderr)
                         raise
                     finally:
                         pbar.update(1)
+        else:
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(_process_file, a): a[0] for a in worker_args}
+                with tqdm(total=len(pending), unit="file") as pbar:
+                    for future in as_completed(futures):
+                        src = futures[future]
+                        try:
+                            _, n_records = future.result()
+                            total_records += n_records
+                        except Exception as e:
+                            print(f"\nERROR [{src}]: {e}", file=sys.stderr)
+                            raise
+                        finally:
+                            pbar.update(1)
 
         elapsed = time.time() - t0
         rate = total_records / elapsed if elapsed > 0 else 0
