@@ -112,7 +112,9 @@ class ICite(DatasetPipeline):
             utc=True,
         )
 
-        self.save_parquet(df, self.intermediate_path() / "icite.parquet")
+        # Distinct from the output's icite.parquet so the two never collide
+        # when intermediate_root == output_root.
+        self.save_parquet(df, self.intermediate_path() / "icite_metadata.parquet")
 
     def _extract_open_citation_collection(self) -> None:
         src = self.raw_path() / "open_citation_collection.zip"
@@ -128,7 +130,7 @@ class ICite(DatasetPipeline):
                     writer.write_batch(batch)
 
     def _transform_metadata(self) -> None:
-        df = self.load_parquet(self.intermediate_path() / "icite.parquet")
+        df = self.load_parquet(self.intermediate_path() / "icite_metadata.parquet")
 
         unexpected_cols = set(df.columns) - set(SCHEMA)
         if unexpected_cols:
@@ -164,5 +166,8 @@ class ICite(DatasetPipeline):
     def _load_open_citation_collection(self) -> None:
         src = self.intermediate_path() / "open_citation_collection.parquet"
         dst = self.output_path() / "open_citation_collection.parquet"
-        shutil.copyfile(src, dst)
+        # No-op when intermediate_root == output_root (src and dst are the same
+        # file); shutil.copyfile would otherwise raise SameFileError.
+        if src.resolve() != dst.resolve():
+            shutil.copyfile(src, dst)
         self.save_schema_yaml(OPEN_CITATION_SCHEMA, "open_citation_collection")
