@@ -174,8 +174,10 @@ downstream repos can join across datasets safely. Canonical forms:
   stripped, to normalize and to save space across hundreds of millions of rows.
 - **Ensembl Gene ID** — unversioned `ENS…G\d+`; the species infix varies (`ENSG…`
   human, `ENSMUSG…` mouse), so the pattern is permissive across species. Open
-  Targets' canonical key for a target. Cross-species *homologue* gene IDs are not
-  all Ensembl (worm/fly use `WBGene`/`FBgn`), so those columns stay plain strings.
+  Targets' canonical key for a target and the `proteinatlas` gene key. Cross-species
+  *homologue* gene IDs are not all Ensembl (worm/fly use `WBGene`/`FBgn`), so those
+  columns stay plain strings. The pattern is enforced in pandas as well as polars
+  (the `proteinatlas` pipeline is pandas-backed).
 - **ChEMBL ID** — `CHEMBL\d+`; Open Targets' canonical drug-molecule identifier.
 - **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix
   (some sources, e.g. Ensembl's TSV dumps, drop the version): the curated/predicted
@@ -672,6 +674,56 @@ child tables keyed by `doid`:
   (`doid` → `replaced_by_id`).
 - `term_consider` — one row per obsolete term's suggested alternative
   (`doid` → `consider_id`).
+
+Human Protein Atlas (`proteinatlas`, pandas; the single wide zipped TSV
+`proteinatlas.tsv.zip`, ~20.2k rows × 119 columns, one row per protein-coding gene).
+It fits in memory, so it is an in-memory pandas pipeline: `extract` reads the TSV
+and reshapes it, `transform` is a no-op, `load` validates and writes. The grain key
+is the Ensembl gene ID (`EnsemblGeneId`; human-only, so always `ENSG…`). The parent
+`genes` table keeps the gene-level scalars; the wide column families are reshaped
+into tidy child tables keyed by `ensembl_gene_id`. External identifiers other than
+the Ensembl key and UniProt accession (antibody IDs, RRIDs, expression-cluster
+labels) are heterogeneous and stay documented plain strings. Twelve tables — the
+parent plus eleven children:
+
+- `genes` — one row per gene: symbol, description, chromosome, `position_start` /
+  `position_end` (parsed from the `start-end` range), the four evidence levels,
+  secretome location/function, `ccd_protein` / `ccd_transcript` (booleans; the
+  source `NA` → null), the two blood-concentration columns (pg/L, `Int64`), the five
+  RNA expression-cluster labels, `rna_tissue_cell_type_enrichment` (kept verbatim —
+  the `tissue - cell type` tokens are not split, as either side may contain ` - `),
+  `n_interactions`, and the three reliability scores.
+- `gene_synonyms`, `gene_uniprot` (`uniprot_accession` typed `UniprotAccession`),
+  `gene_protein_classes`, `gene_biological_processes`, `gene_molecular_functions`,
+  `gene_disease_involvement` — the comma-separated list fields, one value per row.
+- `gene_subcellular_locations` — one row per immunofluorescence location, with
+  `location_class` ∈ {`main`, `additional`} (from the two source columns; the
+  redundant union column is not re-ingested).
+- `gene_antibodies` — one row per `(gene, antibody)`, with the antibody `rrid` when
+  the release assigns one (blank in v25.1).
+- `expression_specificity` — the `specificity` / `distribution` / `specificity_score`
+  triple that the source repeats across 11 RNA contexts (tissue, single cell, single
+  cell type group, single nuclei brain, cancer, brain regional, blood cell, blood
+  lineage, cell line, mouse/pig brain regional) and 2 protein contexts (cell type,
+  tissue), unified into one long table with a `modality` ∈ {`RNA`, `protein`} +
+  `context` discriminator rather than ~52 parallel parent columns. A row is emitted
+  per gene × context only where the source carries any of the three values.
+- `specific_expression` — the matching `specific <unit>` maps (`sample: value;…`, the
+  per-sample elevated expression) exploded to one row per `(gene, modality, context,
+  sample)`, with `value` (`Float64`) and `unit` ∈ {`nTPM`, `nCPM`, `pTPM`,
+  `Intensity`}.
+- `cancer_prognostics` — the 31 per-cancer prognostics columns reshaped long: one row
+  per `(gene, cancer, dataset)` with `dataset` ∈ {`TCGA`, `validation`} (from the
+  column header), `prognostic_type` (the call, e.g. `unprognostic`, `validated
+  prognostic favorable` — a documented free string) and the parsed `p_value`
+  (`Float64`).
+
+`specificity`, `distribution`, `prognostic_type`, and the evidence/reliability/
+cluster strings are documented free strings rather than `allowed_values`-constrained:
+they are curated HPA category labels whose value set can grow between releases, so a
+new value should not abort a run (the PubTator/Open Targets precedent). The
+discriminators this pipeline itself generates — `modality`, `unit`, `location_class`,
+`dataset` — are `allowed_values`-constrained.
 
 Unknome (`unknome`, pandas; the Unknome database — Rocha et al., PLoS Biol 2023 —
 which clusters eukaryotic proteins into PANTHER-based ortholog groups and scores

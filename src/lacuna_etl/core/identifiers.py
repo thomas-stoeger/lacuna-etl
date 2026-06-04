@@ -611,9 +611,23 @@ class EnsemblGeneId(Identifier):
     varies ('' for human, 'MUSG' for mouse, etc.), so the pattern is permissive across
     species. Cross-species homologue gene IDs are NOT all Ensembl (worm/fly/etc. use
     WBGene/FBgn), so those columns stay plain strings rather than using this type.
+
+    The pattern is enforced in pandas too (not only in polars), so the pandas-backed
+    ``proteinatlas`` pipeline validates its gene key; the polars Open Targets
+    pipelines are unaffected (they call ``validate_polars``).
     """
     dtype = pd.StringDtype()
     pattern = r"ENS[A-Z]*G\d+"
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"EnsemblGeneId: {len(bad)} values are not an Ensembl gene ID "
+                f"(r'{cls.pattern}'), e.g. {bad.head(5).tolist()}"
+            )
 
 
 class ChemblId(Identifier):

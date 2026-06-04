@@ -3,6 +3,7 @@ from lacuna_etl.datasets import alliancegenome as _alliancegenome  # noqa: F401
 from lacuna_etl.datasets import harmonizome as ________  # noqa: F401
 from lacuna_etl.datasets import mesh as _mesh  # noqa: F401
 from lacuna_etl.datasets import disease_ontology as _disease_ontology  # noqa: F401
+from lacuna_etl.datasets import proteinatlas as _proteinatlas  # noqa: F401
 from lacuna_etl.datasets import unknome as _unknome  # noqa: F401
 from lacuna_etl.datasets import ols as _ols  # noqa: F401
 from lacuna_etl.datasets import icite as _  # noqa: F401
