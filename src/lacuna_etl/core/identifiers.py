@@ -229,6 +229,34 @@ class GoId(Identifier):
     pattern = r"GO:\d{7}"
 
 
+class DiseaseOntologyId(Identifier):
+    """Human Disease Ontology term ID, e.g. 'DOID:0001816'.
+
+    The canonical DOID curie: the literal prefix ``DOID:`` followed by digits. It
+    keys the ``disease_ontology`` term graph and every edge that references a term
+    (parents, alternate/merged IDs, disjoint-from, obsolete replacements). The
+    ontology's external cross-references (MESH, UMLS_CUI, ORDO, …) are heterogeneous
+    CURIEs with no single canonical form and stay plain strings (the Open Targets
+    disease-ID precedent); only the native DOID gets this type.
+
+    Unlike most string identifiers (whose pattern is enforced only in polars), this
+    type also enforces its pattern in pandas, since ``disease_ontology`` is
+    pandas-backed and the DOID is the grain key of every table.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"DOID:\d+"
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"DiseaseOntologyId: {len(bad)} values are not a canonical DOID curie "
+                f"(r'{cls.pattern}'), e.g. {bad.head(5).tolist()}"
+            )
+
+
 class AllianceGeneId(Identifier):
     """Alliance of Genome Resources canonical gene curie.
 

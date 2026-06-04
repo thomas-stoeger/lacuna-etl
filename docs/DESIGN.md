@@ -144,6 +144,11 @@ downstream repos can join across datasets safely. Canonical forms:
   than propagating a wrong ID.
 - **ISSN-L** — canonical hyphenated `XXXX-XXXC`, checksum verified/recovered.
 - **GO ID** — `GO:` followed by 7 digits.
+- **Disease Ontology ID** — `DOID:` followed by digits (`DOID:0001816`). The Human
+  Disease Ontology's native term ID; keys the `disease_ontology` tables and every
+  edge that references a term. Enforced in pandas (the pipeline is pandas-backed).
+  The ontology's external cross-references (MESH, UMLS_CUI, ORDO, MIM, SNOMEDCT, …)
+  are heterogeneous CURIEs with no single canonical form and stay plain strings.
 - **UniProt accession** — the canonical 6- or 10-character UniProtKB accession
   (`P12345`, `Q70XZ5`, `A0A804MTU9`), matched by UniProt's official accession
   regex; isoform suffixes (`-2`) are not part of the base accession. Enforced in
@@ -634,6 +639,39 @@ strings (the PubTator precedent). Eight tables:
 - `properties` — one row per property (with `property_type` ∈ objectProperty/
   datatypeProperty/annotationProperty).
 - `individuals` — one row per named individual.
+
+Human Disease Ontology (`disease_ontology`, pandas; the single OBO-format
+`doid.obo` release, ~14.7k `[Term]` stanzas). Small enough for memory, so it is an
+in-memory pandas pipeline: `extract` walks the file once into per-table row lists,
+`transform` is a no-op (faithful projection), `load` validates and writes. The
+native term ID is the `DOID:` curie (`DiseaseOntologyId`), which keys the parent and
+every term-referencing edge; external cross-references stay plain strings (see the
+identifier contract). DO uses only `is_a` for its term graph (no `relationship`
+stanzas), so `term_parents` is the single hierarchy edge table; ancestors/children
+are derivable and not materialised. The definition's provenance refs and the
+miscellaneous header annotations are dropped. Ten tables — the parent plus nine
+child tables keyed by `doid`:
+
+- `terms` — one row per term: `name`, `definition` (null where absent),
+  `is_obsolete`, `comment`, `created_by`, `creation_date`.
+- `term_alt_ids` — one row per `(doid, alt_id)`: a secondary/merged DOID that
+  resolves to the term (analogous to `gene_history`/`taxonomy_merged`).
+- `term_parents` — one row per direct `is_a` edge (`doid` → `parent_id`).
+- `term_synonyms` — one row per `(doid, synonym)`: the `scope` (`EXACT`, `BROAD`,
+  `NARROW`, `RELATED`, `allowed_values`-constrained) and the optional `synonym_type`
+  curie (e.g. `OMO:0003012` = acronym, else null).
+- `term_xrefs` — one row per `(doid, xref)`: an external cross-reference CURIE,
+  kept verbatim.
+- `term_subsets` — one row per `(doid, subset)`: a DO slim the term belongs to.
+- `term_skos_matches` — one row per `(doid, match_type, match_id)`: the SKOS
+  `property_value` mappings, `match_type` ∈ {`exactMatch`, `broadMatch`,
+  `closeMatch`, `narrowMatch`, `relatedMatch`}, `match_id` the matched external
+  CURIE (verbatim).
+- `term_disjoint_from` — one row per `disjoint_from` edge (`doid` → `disjoint_from_id`).
+- `term_replaced_by` — one row per obsolete term's definitive replacement
+  (`doid` → `replaced_by_id`).
+- `term_consider` — one row per obsolete term's suggested alternative
+  (`doid` → `consider_id`).
 
 Unknome (`unknome`, pandas; the Unknome database — Rocha et al., PLoS Biol 2023 —
 which clusters eukaryotic proteins into PANTHER-based ortholog groups and scores
