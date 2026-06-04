@@ -144,6 +144,10 @@ downstream repos can join across datasets safely. Canonical forms:
   than propagating a wrong ID.
 - **ISSN-L** — canonical hyphenated `XXXX-XXXC`, checksum verified/recovered.
 - **GO ID** — `GO:` followed by 7 digits.
+- **UniProt accession** — the canonical 6- or 10-character UniProtKB accession
+  (`P12345`, `Q70XZ5`, `A0A804MTU9`), matched by UniProt's official accession
+  regex; isoform suffixes (`-2`) are not part of the base accession. Enforced in
+  pandas (used by `unknome`).
 - **MeSH UIs** — the NLM Medical Subject Headings record identifiers, each a
   single-letter-prefixed UI enforced (in pandas) by a dedicated type:
   `MeshDescriptorId` (`D\d+`), `MeshQualifierId` (`Q\d+`), `MeshSupplementalId`
@@ -603,6 +607,22 @@ mapped to `boolean` with `-` = False.
   it carries MITAB's negative in-vitro/chemical taxids), and `pubmed_id`
   (`PubmedId`, the first `pubmed:` token of `publication_ids`). Resolving the
   entrez interactors is why `alliancegenome` `depends_on` `ncbi_gene_info`.
+
+Unknome (`unknome`, pandas; the Unknome database — Rocha et al., PLoS Biol 2023 —
+which clusters eukaryotic proteins into PANTHER-based ortholog groups and scores
+each by "knownness", 0 = completely uncharacterised, to surface conserved-but-
+unstudied proteins). Two gzipped TSVs whose snake_case headers map straight
+through, into two tables joined on `cluster_id`:
+
+- `proteins` — one row per UniProt entry × accession (the source's `;`-delimited
+  accession list is exploded so each `uniprot_accession` — typed
+  `UniprotAccession` — is its own row; an entry with N accessions yields N rows):
+  `uniprot_name`, `knownness`, `gene_name`/`protein_name`, `taxon_id` (`NcbiTaxId`),
+  `species`, and the `cluster_id` / `panther_group` it belongs to.
+- `clusters` — one row per cluster (`cluster_id`): `panther_id`, `cluster_name`,
+  `knownness`, `num_proteins` / `num_species`, the best-known member
+  (`best_known_protein_id`/`_gene`/`_name`), and `key_protein_ids` /
+  `key_protein_xrefs`. `cluster_id` / `panther_group` are documented plain strings.
 
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):

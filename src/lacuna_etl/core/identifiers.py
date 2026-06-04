@@ -260,6 +260,29 @@ class AllianceGeneId(Identifier):
             )
 
 
+class UniprotAccession(Identifier):
+    """UniProtKB accession number, e.g. 'P12345', 'Q70XZ5', 'A0A804MTU9'.
+
+    The canonical 6- or 10-character UniProtKB accession, matched by UniProt's own
+    official accession regex. Enforced in pandas (the ``unknome`` pipeline that uses
+    it is pandas-backed), unlike most string identifiers whose pattern is checked
+    only in polars. Isoform suffixes (``-2``) are not part of the base accession and
+    do not match.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2}"
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"UniprotAccession: {len(bad)} values are not a valid UniProt accession, "
+                f"e.g. {bad.head(5).tolist()}"
+            )
+
+
 class _MeshUI(Identifier):
     """Base for MeSH unique identifiers (NLM Medical Subject Headings).
 
