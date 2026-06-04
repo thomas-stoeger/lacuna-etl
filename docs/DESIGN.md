@@ -608,6 +608,33 @@ mapped to `boolean` with `-` = False.
   (`PubmedId`, the first `pubmed:` token of `publication_ids`). Resolving the
   entrez interactors is why `alliancegenome` `depends_on` `ncbi_gene_info`.
 
+OLS — Ontology Lookup Service (`ols`, streaming; the EMBL-EBI OLS4 ontology dumps,
+one ~10 GB tarball of 342 "linked" JSON files, ~269 GB uncompressed, one file
+(NCBITaxon) 71 GB). Each ontology JSON is read once straight out of the tarball
+with an `ijson` event router that reconstructs each entity (class / property /
+individual) on the fly plus the ontology's scalar metadata — never loading a whole
+file into memory. Output uses the OpenAlex sharded layout
+(`<dataset>/<table>/<ontology>_<part>.parquet` + one `<table>.yml`); each ontology
+is written as immutable shards with a done-marker, so an interrupted run resumes.
+OLS4 wraps every annotation value as `{"type": [...], "value": "…"}` (or a list, or
+a bare IRI string); these are unwrapped to their string value(s). IRIs, CURIEs and
+short forms are heterogeneous across 342 ontologies, so they are documented plain
+strings (the PubTator precedent). Eight tables:
+
+- `ontologies` — one row per ontology (id, iri, title, description, version IRI,
+  declared class/property/individual counts).
+- `terms` — one row per class (ontology_id, iri, curie, short_form, label,
+  definition, `is_obsolete`, `is_defining_ontology`). Each file also carries
+  *imported* classes referenced from other ontologies, so a term can appear in
+  several ontologies' shards; `is_defining_ontology` flags the home ontology.
+- `term_parents` — one row per direct subClassOf edge (term_iri → parent_iri).
+- `term_synonyms` — one row per (term, synonym, `synonym_type` ∈ exact/related/
+  narrow/broad), from the oboInOwl synonym properties.
+- `term_xrefs` — one row per term database cross-reference (oboInOwl hasDbXref).
+- `properties` — one row per property (with `property_type` ∈ objectProperty/
+  datatypeProperty/annotationProperty).
+- `individuals` — one row per named individual.
+
 Unknome (`unknome`, pandas; the Unknome database — Rocha et al., PLoS Biol 2023 —
 which clusters eukaryotic proteins into PANTHER-based ortholog groups and scores
 each by "knownness", 0 = completely uncharacterised, to surface conserved-but-

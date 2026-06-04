@@ -3,6 +3,7 @@ from lacuna_etl.datasets import alliancegenome as _alliancegenome  # noqa: F401
 from lacuna_etl.datasets import harmonizome as ________  # noqa: F401
 from lacuna_etl.datasets import mesh as _mesh  # noqa: F401
 from lacuna_etl.datasets import unknome as _unknome  # noqa: F401
+from lacuna_etl.datasets import ols as _ols  # noqa: F401
 from lacuna_etl.datasets import icite as _  # noqa: F401
 from lacuna_etl.datasets import ncbi_nlmcatalog_reportedmedline as _______________  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene2go as __  # noqa: F401
