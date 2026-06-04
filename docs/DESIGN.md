@@ -144,6 +144,12 @@ downstream repos can join across datasets safely. Canonical forms:
   than propagating a wrong ID.
 - **ISSN-L** — canonical hyphenated `XXXX-XXXC`, checksum verified/recovered.
 - **GO ID** — `GO:` followed by 7 digits.
+- **MeSH UIs** — the NLM Medical Subject Headings record identifiers, each a
+  single-letter-prefixed UI enforced (in pandas) by a dedicated type:
+  `MeshDescriptorId` (`D\d+`), `MeshQualifierId` (`Q\d+`), `MeshSupplementalId`
+  (`C\d+`, Supplementary Concept Records), `MeshConceptId` (`M\d+`), `MeshTermId`
+  (`T\d+`). PubMed's `mesh_headings.descriptor_ui`/`qualifier_ui` carry the same
+  `D…`/`Q…` form (left as documented strings there).
 - **Alliance gene ID** — the Alliance of Genome Resources canonical gene curie:
   one of the eight model-organism-database prefixes `HGNC`/`MGI`/`RGD`/`ZFIN`/
   `SGD`/`FB`/`WB`/`Xenbase` followed by that database's accession. No single
@@ -498,6 +504,38 @@ datasource/datatype IDs, clinical stage, etc.) are documented free strings rathe
 than `allowed_values`-constrained, so a new value in a future release does not abort
 a run.
 
+MeSH — Medical Subject Headings (`mesh`, pandas; the four NLM yearly XML files:
+`desc` descriptors, `qual` qualifiers, `supp` Supplementary Concept Records,
+`pa` pharmacological actions). All fit in memory; `extract` walks each file once
+with `iterparse`, `transform` is a no-op, `load` validates and writes. Twenty
+tables — a parent per record type plus its record-type-specific children, and
+**four shared concept tables** (every record type carries the same `ConceptList`
+substructure, so concepts/terms/relations/registry-numbers are emitted once,
+keyed by `record_ui` with a `record_type` ∈ {descriptor, qualifier, supplemental}
+discriminator, rather than duplicated three times). UIs are typed (see the
+identifier contract); `record_ui` stays a plain string because it mixes `D…`/`Q…`/
+`C…`. Dates are `DateIntroduced`/`LastUpdated` (other MeSH dates are term-level).
+Per-term source thesaurus IDs are kept as a pipe-delimited string; the SCR
+heading-mapping `*` primary marker is parsed into an `is_primary` flag with the
+`*` stripped off the descriptor UI.
+
+- **Descriptors** (main headings): `descriptors` (UI, name, class, dates, notes)
+  plus `descriptor_tree_numbers`, `descriptor_allowable_qualifiers`,
+  `descriptor_pharmacological_actions`, `descriptor_previous_indexing`,
+  `descriptor_see_related`, and `descriptor_entry_combinations` (ECIN→ECOUT
+  descriptor+qualifier mappings).
+- **Qualifiers** (subheadings): `qualifiers` plus `qualifier_tree_numbers`.
+- **Supplementary Concept Records**: `supplemental_records` plus
+  `supplemental_heading_mapped_to` (descriptor/qualifier the SCR maps to, with
+  `is_primary`), `supplemental_indexing_information`,
+  `supplemental_pharmacological_actions`, `supplemental_previous_indexing`,
+  `supplemental_sources`.
+- **Pharmacological actions**: `pharmacological_actions` (one row per action
+  descriptor × substance; `substance_ui` mixes `D…`/`C…` so it is a plain string).
+- **Shared concept substructure**: `concepts`, `concept_terms` (entry
+  terms/synonyms), `concept_relations` (NRW/BRD/REL between concepts), and
+  `concept_related_registry_numbers`.
+
 Alliance of Genome Resources (`alliancegenome`, pandas; one release directory
 holding many products, each a directory of gzipped TSVs split by member database
 / species plus an all-species `COMBINED` rollup). One module, nine tables — the
@@ -529,7 +567,10 @@ mapped to `boolean` with `-` = False.
   `No`, `Yes_Adjusted`}).
 - `disease_associations` (DISEASE-ALLIANCE) — gene / allele / affected-genomic-model
   → Disease Ontology (`do_id`) associations, with `association_type`, ECO
-  `evidence_code`, `reference`, and provenance.
+  `evidence_code`, `reference`, and provenance. The single-valued `reference` is
+  mirrored into a typed `pubmed_id` (`PubmedId`) when it is a `PMID:` citation.
+  (`expression.reference` is *not* given a `pubmed_id`: it is multi-valued — up to
+  ~140 PMIDs per row — so its PMIDs stay in the raw delimited `reference` string.)
 - `expression` (EXPRESSION-ALLIANCE) — gene expression annotations (assay, stage,
   anatomy / cellular-component / substructure terms with their qualifier lists).
 - `variant_alleles` (VARIANT-ALLELE, from the nested `4.0.0/…/COMBINED` rollup) —
@@ -544,13 +585,24 @@ mapped to `boolean` with `-` = False.
 - `uniprot_cross_references` (CROSSREFERENCEUNIPROT; headerless two-column) —
   UniProtKB identifier → external cross-reference.
 - `genetic_interactions` (INTERACTION-GEN) and `molecular_interactions`
-  (INTERACTION-MOL) — PSI-MITAB 2.7 (42 columns; the column header lives in the
+  (INTERACTION-MOL) — PSI-MITAB 2.7 (42 raw columns; the column header lives in the
   comment block, the data is headerless). Fields are heterogeneous
   controlled-vocabulary CURIEs (`psi-mi:"MI:nnnn"(label)`, pipe-delimited lists)
   kept as documented plain strings; only `negative` is a boolean. Because MITAB
   carries bare `"` as data, these (and the other reports) are read with quoting
   disabled — except `variant_alleles`, whose source uses real CSV quoting to wrap
-  the rare symbol containing a literal tab.
+  the rare symbol containing a literal tab. The raw interactor IDs are not Alliance
+  curies (they are `entrez gene/locuslink:`, `flybase:`, `wormbase:`, plus
+  `uniprotkb:`/`refseq:`/… in the molecular table), so four typed columns are
+  derived alongside the raw ones: `interactor_a_gene_id`/`interactor_b_gene_id`
+  (`AllianceGeneId`, resolving `flybase:`→`FB:`, `wormbase:`→`WB:`, and `entrez
+  gene/locuslink:`→the curie via gene_info's `AllianceGenome:` dbXref; null for
+  non-gene IDs — populated for 100% of genetic and 88% of molecular interactors),
+  the MITAB `taxid:nnnn(label)` strings parsed in place to `interactor_a_taxid`/
+  `interactor_b_taxid` (`NcbiTaxId`; `host_organisms` keeps its raw string because
+  it carries MITAB's negative in-vitro/chemical taxids), and `pubmed_id`
+  (`PubmedId`, the first `pubmed:` token of `publication_ids`). Resolving the
+  entrez interactors is why `alliancegenome` `depends_on` `ncbi_gene_info`.
 
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):

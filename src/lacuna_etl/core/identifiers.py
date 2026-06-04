@@ -260,6 +260,52 @@ class AllianceGeneId(Identifier):
             )
 
 
+class _MeshUI(Identifier):
+    """Base for MeSH unique identifiers (NLM Medical Subject Headings).
+
+    Each MeSH record type has a single-letter-prefixed UI: descriptors ``D``,
+    qualifiers ``Q``, supplementary concept records ``C``, concepts ``M``, terms
+    ``T``. The pattern is enforced in pandas (the ``mesh`` pipeline is pandas-backed),
+    unlike most string identifiers whose pattern is checked only in polars.
+    """
+    dtype = pd.StringDtype()
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"{cls.__name__}: {len(bad)} values not matching r'{cls.pattern}', "
+                f"e.g. {bad.head(5).tolist()}"
+            )
+
+
+class MeshDescriptorId(_MeshUI):
+    """MeSH descriptor (main heading) UI, e.g. 'D000001'."""
+    pattern = r"D\d+"
+
+
+class MeshQualifierId(_MeshUI):
+    """MeSH qualifier (subheading) UI, e.g. 'Q000008'."""
+    pattern = r"Q\d+"
+
+
+class MeshSupplementalId(_MeshUI):
+    """MeSH Supplementary Concept Record UI, e.g. 'C000002'."""
+    pattern = r"C\d+"
+
+
+class MeshConceptId(_MeshUI):
+    """MeSH concept UI, e.g. 'M0000001'."""
+    pattern = r"M\d+"
+
+
+class MeshTermId(_MeshUI):
+    """MeSH term UI, e.g. 'T000002'."""
+    pattern = r"T\d+"
+
+
 class Doi(Identifier):
     """Article-level DOI: URL prefix stripped, and no publisher version suffix.
 

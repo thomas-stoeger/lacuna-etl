@@ -3,8 +3,10 @@ import gzip
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
-from lacuna_etl.core.identifiers import AllianceGeneId, NcbiTaxId
+from lacuna_etl.config import get_output_root
+from lacuna_etl.core.identifiers import AllianceGeneId, NcbiTaxId, PubmedId
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.registry import register
@@ -102,7 +104,8 @@ DISEASE_SCHEMA = {
     "modifier": ColumnSpec(description="Annotation modifier (e.g. ameliorated_by, induced_by)"),
     "evidence_code": ColumnSpec(description="Evidence & Conclusion Ontology code (ECO:...)"),
     "evidence_code_name": ColumnSpec(description="Human-readable evidence code name"),
-    "reference": ColumnSpec(description="Supporting reference(s), e.g. PMID:... or member-database reference IDs"),
+    "reference": ColumnSpec(description="Supporting reference (a single PMID:... or member-database reference ID)"),
+    "pubmed_id": ColumnSpec(identifier=PubmedId, description="PubMed ID parsed from reference when it is a 'PMID:' citation; null otherwise"),
     "date": ColumnSpec(description="Date of the annotation (source YYYYMMDD string)"),
     "source": ColumnSpec(description="Contributing member database"),
 }
@@ -370,14 +373,24 @@ def _mitab_schema() -> dict[str, ColumnSpec]:
         "participant_a_identification_methods": "Participant identification method for A",
         "participant_b_identification_methods": "Participant identification method for B",
     }
-    schema = {
-        name: ColumnSpec(
-            description=descriptions[name],
-            required=name in ("interactor_a_id", "interactor_b_id"),
-        )
-        for name in _MITAB_NAMES
-    }
-    return schema
+    # Derived/typed columns added next to their raw source: the raw interactor IDs
+    # are heterogeneous (entrez/flybase/wormbase/uniprot/...) so a resolved Alliance
+    # gene curie is added alongside; the MITAB taxid string is parsed to NcbiTaxId;
+    # and the PubMed ID is lifted out of the publication_ids list.
+    out: dict[str, ColumnSpec] = {}
+    for name in _MITAB_NAMES:
+        if name in ("interactor_a_taxid", "interactor_b_taxid"):
+            side = "A" if name.startswith("interactor_a") else "B"
+            out[name] = ColumnSpec(identifier=NcbiTaxId, description=f"NCBI taxonomy ID of interactor {side} (parsed from the MITAB taxid:nnnn(label) form)")
+        else:
+            out[name] = ColumnSpec(description=descriptions[name], required=name in ("interactor_a_id", "interactor_b_id"))
+        if name == "interactor_a_id":
+            out["interactor_a_gene_id"] = ColumnSpec(identifier=AllianceGeneId, description="Interactor A resolved to an Alliance gene curie (flybase/wormbase prefix remapped to FB/WB; entrez resolved via NCBI gene_info 'AllianceGenome:' dbXref); null when not resolvable")
+        elif name == "interactor_b_id":
+            out["interactor_b_gene_id"] = ColumnSpec(identifier=AllianceGeneId, description="Interactor B resolved to an Alliance gene curie; null when not resolvable")
+        elif name == "publication_ids":
+            out["pubmed_id"] = ColumnSpec(identifier=PubmedId, description="PubMed ID lifted from publication_ids (first 'pubmed:' token); null when the interaction cites no PubMed record")
+    return out
 
 
 MITAB_SCHEMA = _mitab_schema()
@@ -469,9 +482,63 @@ def _null_strings(df: pd.DataFrame, skip: set[str]) -> None:
         df[col] = s.mask(s.isin(["", "-"]), pd.NA)
 
 
+def _first_taxid(s: pd.Series) -> pd.Series:
+    """``taxid:6239(caeel)|taxid:6239(...)`` -> 6239 as nullable Int64 (NcbiTaxId)."""
+    return pd.to_numeric(s.str.extract(r"taxid:(\d+)", expand=False), errors="raise").astype("Int64")
+
+
+def _first_pubmed(s: pd.Series) -> pd.Series:
+    """First ``pubmed:``/``PMID:`` token in a delimited id string -> nullable Int64.
+
+    Matches both the interaction ``pubmed:`` form and the disease ``PMID:`` form;
+    non-PubMed references (MGI:, FB:, imex:, ...) yield null.
+    """
+    return pd.to_numeric(s.str.extract(r"(?i)p(?:ubmed|mid):(\d+)", expand=False), errors="raise").astype("Int64")
+
+
+def _resolve_alliance_gene_ids(ids: pd.Series, entrez_to_curie: dict[int, str]) -> pd.Series:
+    """Resolve a raw MITAB interactor id to an Alliance gene curie, else null.
+
+    ``flybase:FBgn…`` / ``wormbase:WBGene…`` are the Alliance FlyBase/WormBase genes
+    under a different prefix, remapped to ``FB:`` / ``WB:``. ``entrez gene/locuslink:N``
+    is an NCBI Gene ID, resolved through gene_info's ``AllianceGenome:`` dbXref.
+    Other prefixes (uniprotkb, refseq, intact, ensembl) are not Alliance genes -> null.
+    """
+    parts = ids.str.split(":", n=1)
+    prefix, rest = parts.str[0], parts.str[1]
+    out = pd.Series(pd.NA, index=ids.index, dtype="object")
+    out = out.mask(prefix.eq("flybase"), "FB:" + rest)
+    out = out.mask(prefix.eq("wormbase"), "WB:" + rest)
+    en = prefix.eq("entrez gene/locuslink")
+    entrez = pd.to_numeric(rest.where(en), errors="coerce").astype("Int64").map(entrez_to_curie)
+    out = out.mask(en, entrez)
+    return out
+
+
+def _apply_schema_nullable_pmid(df: pd.DataFrame, schema: dict[str, ColumnSpec], pmid_cols: set[str]) -> pd.DataFrame:
+    """Like ``DatasetPipeline.apply_schema`` but PubMed-ID columns may be null.
+
+    ``NumericIdentifier.validate`` rejects any null, but a lifted-out ``pubmed_id`` is
+    legitimately sparse, so those columns are cast and checked for positivity on the
+    non-null values only (the retraction-watch nullable-PMID precedent).
+    """
+    df = df[list(schema)]
+    for col, spec in schema.items():
+        df[col] = spec.cast(df[col])
+        if col in pmid_cols:
+            if (df[col].dropna() <= 0).any():
+                raise ValueError(f"{col}: non-positive PubMed ID")
+        else:
+            spec.validate(df[col])
+    return df
+
+
 @register
 class AllianceGenome(DatasetPipeline):
     name = "alliancegenome"
+    # gene_info supplies the entrez -> Alliance-curie map used to resolve the
+    # interaction tables' entrez-gene interactor IDs.
+    depends_on = ["ncbi_gene_info"]
 
     # (intermediate stem, output table, schema) for the generic load loop.
     _TABLES = [
@@ -502,8 +569,29 @@ class AllianceGenome(DatasetPipeline):
         self._extract_gene_descriptions()
         self._extract_gene_cross_references()
         self._extract_uniprot_cross_references()
-        self._extract_interactions("INTERACTION-GEN", "genetic_interactions")
-        self._extract_interactions("INTERACTION-MOL", "molecular_interactions")
+        entrez_to_curie = self._entrez_to_alliance_curie()
+        self._extract_interactions("INTERACTION-GEN", "genetic_interactions", entrez_to_curie)
+        self._extract_interactions("INTERACTION-MOL", "molecular_interactions", entrez_to_curie)
+
+    def _entrez_to_alliance_curie(self) -> dict[int, str]:
+        """Map NCBI Gene ID -> Alliance gene curie from gene_info's ``AllianceGenome:``
+        dbXrefs. (Same source as the ``ncbi_gene2_alliance`` crosswalk, re-derived here
+        rather than read from it, which would be a circular dependency.)"""
+        path = get_output_root() / "ncbi_gene_info" / "gene_info.parquet"
+        gi = (
+            pl.scan_parquet(path)
+            .select(["entrez_id", "db_xrefs"])
+            .filter(pl.col("db_xrefs").str.contains("AllianceGenome:", literal=True))
+            .with_columns(pl.col("db_xrefs").str.split("|"))
+            .explode("db_xrefs")
+            .filter(pl.col("db_xrefs").str.starts_with("AllianceGenome:"))
+            .with_columns(pl.col("db_xrefs").str.replace("^AllianceGenome:", "").alias("curie"))
+            .select(["entrez_id", "curie"])
+            .unique()
+            .collect()
+        )
+        print(f"[{self.name}] entrez -> Alliance curie map: {gi.height:,}")
+        return dict(zip(gi["entrez_id"].to_list(), gi["curie"].to_list()))
 
     def transform(self) -> None:
         # Each table is a faithful one-row-per-source-line projection; all casting
@@ -532,10 +620,11 @@ class AllianceGenome(DatasetPipeline):
 
     def _extract_disease(self) -> None:
         df = _read_alliance(self._combined("DISEASE-ALLIANCE", "COMBINED"))
-        df = df.rename(columns=_DISEASE_RENAME)[list(DISEASE_SCHEMA)]
-        _null_strings(df, {"tax_id"})
+        df = df.rename(columns=_DISEASE_RENAME)
+        df["pubmed_id"] = _first_pubmed(df["reference"])
+        _null_strings(df, {"tax_id", "pubmed_id"})
         df["tax_id"] = _strip_taxon(df["tax_id"])
-        df = self.apply_schema(df, DISEASE_SCHEMA)
+        df = _apply_schema_nullable_pmid(df, DISEASE_SCHEMA, {"pubmed_id"})
         self.save_parquet(df, self.intermediate_path() / "disease_associations.parquet")
 
     def _extract_expression(self) -> None:
@@ -590,11 +679,21 @@ class AllianceGenome(DatasetPipeline):
         df = self.apply_schema(df, UNIPROT_XREF_SCHEMA)
         self.save_parquet(df, self.intermediate_path() / "uniprot_cross_references.parquet")
 
-    def _extract_interactions(self, product: str, stem: str) -> None:
+    def _extract_interactions(self, product: str, stem: str, entrez_to_curie: dict[int, str]) -> None:
         df = _read_alliance(self._combined(product, "COMBINED"), names=_MITAB_NAMES)
         # MITAB Negative is true/false but the Alliance also emits `-` (unspecified)
         # and upper-case variants; treat `-` as null, normalize case.
         df["negative"] = _to_bool(df["negative"], _NEGATIVE_MAP, casefold=True, null_tokens=("", "-"))
-        _null_strings(df, {"negative"})
-        df = self.apply_schema(df, MITAB_SCHEMA)
+        # Resolve the raw (entrez/flybase/wormbase/...) interactor IDs to Alliance gene
+        # curies, lift the PubMed ID out of the publication list, and parse the MITAB
+        # taxid strings to NcbiTaxId integers — all from the raw columns before nulling.
+        df["interactor_a_gene_id"] = _resolve_alliance_gene_ids(df["interactor_a_id"], entrez_to_curie)
+        df["interactor_b_gene_id"] = _resolve_alliance_gene_ids(df["interactor_b_id"], entrez_to_curie)
+        df["pubmed_id"] = _first_pubmed(df["publication_ids"])
+        df["interactor_a_taxid"] = _first_taxid(df["interactor_a_taxid"])
+        df["interactor_b_taxid"] = _first_taxid(df["interactor_b_taxid"])
+        derived = {"negative", "pubmed_id", "interactor_a_taxid", "interactor_b_taxid",
+                   "interactor_a_gene_id", "interactor_b_gene_id"}
+        _null_strings(df, derived)
+        df = _apply_schema_nullable_pmid(df, MITAB_SCHEMA, {"pubmed_id"})
         self.save_parquet(df, self.intermediate_path() / f"{stem}.parquet")
