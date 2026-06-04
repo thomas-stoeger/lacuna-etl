@@ -5,6 +5,7 @@ from lacuna_etl.datasets import mesh as _mesh  # noqa: F401
 from lacuna_etl.datasets import disease_ontology as _disease_ontology  # noqa: F401
 from lacuna_etl.datasets import proteinatlas as _proteinatlas  # noqa: F401
 from lacuna_etl.datasets import unknome as _unknome  # noqa: F401
+from lacuna_etl.datasets import hgnc as _hgnc  # noqa: F401
 from lacuna_etl.datasets import ols as _ols  # noqa: F401
 from lacuna_etl.datasets import icite as _  # noqa: F401
 from lacuna_etl.datasets import ncbi_nlmcatalog_reportedmedline as _______________  # noqa: F401

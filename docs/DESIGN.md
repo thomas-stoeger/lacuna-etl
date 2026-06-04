@@ -166,6 +166,11 @@ downstream repos can join across datasets safely. Canonical forms:
   most string identifiers (pattern enforced only in polars), this one also
   enforces its pattern in pandas, since the Alliance pipelines are pandas-backed
   and the `ncbi_gene2_alliance` join depends on the form.
+- **HGNC ID** — the HUGO Gene Nomenclature Committee's stable gene accession,
+  `HGNC:` followed by digits (`HGNC:5`). Keys the `hgnc` tables, and is the human
+  prefix of the Alliance gene curie (so for a human gene the `HgncId` and the
+  `AllianceGeneId` coincide). Enforced in pandas (the `hgnc` pipeline is
+  pandas-backed).
 - **ROR ID** — canonical full URL `https://ror.org/...` (the registry's own
   canonical form).
 - **Wikidata ID** — bare `Q\d+`, URL forms stripped.
@@ -724,6 +729,41 @@ they are curated HPA category labels whose value set can grow between releases, 
 new value should not abort a run (the PubTator/Open Targets precedent). The
 discriminators this pipeline itself generates — `modality`, `unit`, `location_class`,
 `dataset` — are `allowed_values`-constrained.
+
+HGNC — HUGO Gene Nomenclature Committee (`hgnc`, pandas; the single wide
+tab-delimited `hgnc_complete_set_<date>.txt`, ~45k rows × ~54 columns, one row per
+approved human gene). It fits in memory, so it is an in-memory pandas pipeline:
+`extract` reads the TSV and reshapes it, `transform` is a no-op (faithful
+projection), `load` types/validates and writes. The grain key is the HGNC id
+(`HgncId`; `HGNC:5`, unique and never null). The parent `genes` table keeps the
+one-per-gene scalars — approved `symbol`/`name`, `locus_group`/`locus_type`,
+`status`, cytogenetic `location`, the four curation dates, the single-valued
+external cross-references, and the MANE Select transcript pair split into
+`mane_select_ensembl_transcript_id` + `mane_select_refseq_accession`
+(`RefSeqAccession`). Typed scalar cross-references: `entrez_id` (`NcbiGeneId`,
+nullable), `ensembl_gene_id` (`EnsemblGeneId`, human `ENSG…`, nullable), `agr` (the
+Alliance gene curie, `AllianceGeneId`; equals the HGNC id for human genes). The
+many heterogeneous resource ids (Vega, UCSC, OMIM, Orphanet, COSMIC, miRBase, EC,
+MGI/RGD curies, …) have no single canonical form and stay documented plain strings
+(the Open Targets / PubTator precedent). `locus_group`/`locus_type`/`status` are
+documented free strings, not `allowed_values`-constrained (curated labels that can
+grow between releases). Three source columns empty in the snapshot
+(`location_sortable`, `kznf_gene_catalog`, `intermediate_filament_db`) are not
+ingested. The `|`-delimited multi-valued fields explode into child tables keyed by
+`hgnc_id` — sixteen tables, the parent plus fifteen children:
+
+- `gene_alias_symbols`, `gene_alias_names`, `gene_prev_symbols`, `gene_prev_names`
+  — the nomenclature-history lists, one value per row.
+- `gene_groups` — one row per `(hgnc_id, gene_group_id, gene_group_name)`; the
+  paired `gene_group` / `gene_group_id` lists (`gene_group_id` `Int64`, the HGNC
+  gene-family id).
+- `gene_uniprot` (`uniprot_accession`, `UniprotAccession`), `gene_refseq`
+  (`refseq_accession`, `RefSeqAccession`), `gene_pubmed` (`pubmed_id`, `PubmedId`)
+  — the typed joinable cross-references.
+- `gene_ena`, `gene_ccds`, `gene_mgd` (mouse MGI curie), `gene_rgd` (rat RGD curie),
+  `gene_omim`, `gene_enzyme` (EC number) — plain-string cross-reference lists.
+- `gene_lsdb` — one row per locus-specific-database `name|url` pair
+  (`lsdb_name`, `lsdb_url`).
 
 Unknome (`unknome`, pandas; the Unknome database — Rocha et al., PLoS Biol 2023 —
 which clusters eukaryotic proteins into PANTHER-based ortholog groups and scores

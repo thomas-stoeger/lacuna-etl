@@ -288,6 +288,33 @@ class AllianceGeneId(Identifier):
             )
 
 
+class HgncId(Identifier):
+    """HGNC gene identifier, e.g. 'HGNC:5'.
+
+    The HUGO Gene Nomenclature Committee's stable accession for a human gene: the
+    literal prefix ``HGNC:`` followed by digits. It is the grain key of the ``hgnc``
+    tables and the human prefix of the ``AllianceGeneId`` curie (the Alliance keys
+    human genes by their HGNC id), so the two forms coincide for human genes; NCBI's
+    ``gene_info`` also cross-references it as ``HGNC:<id>`` in ``db_xrefs``.
+
+    Unlike most string identifiers (whose pattern is checked only in polars), this
+    type also enforces its pattern in pandas, since the ``hgnc`` pipeline is
+    pandas-backed and the HGNC id is the key of every table.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"HGNC:\d+"
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"HgncId: {len(bad)} values are not a canonical HGNC id "
+                f"(r'{cls.pattern}'), e.g. {bad.head(5).tolist()}"
+            )
+
+
 class UniprotAccession(Identifier):
     """UniProtKB accession number, e.g. 'P12345', 'Q70XZ5', 'A0A804MTU9'.
 
