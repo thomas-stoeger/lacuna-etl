@@ -144,6 +144,13 @@ downstream repos can join across datasets safely. Canonical forms:
   than propagating a wrong ID.
 - **ISSN-L** — canonical hyphenated `XXXX-XXXC`, checksum verified/recovered.
 - **GO ID** — `GO:` followed by 7 digits.
+- **Alliance gene ID** — the Alliance of Genome Resources canonical gene curie:
+  one of the eight model-organism-database prefixes `HGNC`/`MGI`/`RGD`/`ZFIN`/
+  `SGD`/`FB`/`WB`/`Xenbase` followed by that database's accession. No single
+  accession shape spans the databases, so the prefix set is the anchor. Unlike
+  most string identifiers (pattern enforced only in polars), this one also
+  enforces its pattern in pandas, since the Alliance pipelines are pandas-backed
+  and the `ncbi_gene2_alliance` join depends on the form.
 - **ROR ID** — canonical full URL `https://ror.org/...` (the registry's own
   canonical form).
 - **Wikidata ID** — bare `Q\d+`, URL forms stripped.
@@ -491,6 +498,60 @@ datasource/datatype IDs, clinical stage, etc.) are documented free strings rathe
 than `allowed_values`-constrained, so a new value in a future release does not abort
 a run.
 
+Alliance of Genome Resources (`alliancegenome`, pandas; one release directory
+holding many products, each a directory of gzipped TSVs split by member database
+/ species plus an all-species `COMBINED` rollup). One module, nine tables — the
+`COMBINED` rollup per product, except `gene_descriptions`, which has no `COMBINED`
+file and so concatenates the per-species shards. Each table is a faithful
+one-row-per-source-line projection. The canonical **gene** columns are typed
+`AllianceGeneId` (the eight-prefix Alliance gene curie; see the identifier
+contract): `orthology.gene1_id`/`gene2_id`, `expression.gene_id`,
+`gene_descriptions.gene_id`, and `variant_alleles.allele_associated_gene_id`/
+`variant_affected_gene_id`. Other identifier columns are heterogeneous CURIEs
+(`DOID:`, `UniProtKB:`, allele/model IDs, the PSI-MITAB `entrez gene/locuslink`/
+`flybase`/`wormbase` interactor forms, and `gene_cross_references.gene_id` /
+`disease_associations.db_object_id`, which also hold non-gene IDs) with no single
+canonical form, so they stay documented **plain strings** (the Open Targets
+disease-ID precedent), `required` where they are a grain key. Species taxon
+columns, written uniformly as `NCBITaxon:<id>`, are stripped of the prefix and
+typed `NcbiTaxId` (`tax_id` / `gene1_tax_id` / `gene2_tax_id`). Multi-valued attribute fields (synonyms,
+qualifier-ID lists, HGVS names, references) are kept as their **raw delimited
+strings** (`|`- or `,`-separated) rather than exploded into child tables, so the
+grain stays one row per source line. `-` and empty strings are the source null
+markers and become null, except where the source overloads `-` as a real value
+(handled before that pass): the variant annotation-presence flags use `yes`/`-`,
+mapped to `boolean` with `-` = False.
+
+- `orthology` (ORTHOLOGY-ALLIANCE) — cross-species ortholog gene pairs: the two
+  genes (id/symbol/`tax_id`/species), the supporting `algorithms` (pipe list),
+  `algorithms_match` / `out_of_algorithms` counts (`Int64`), and the
+  `is_best_score` / `is_best_reverse_score` labels (`allowed_values` ∈ {`Yes`,
+  `No`, `Yes_Adjusted`}).
+- `disease_associations` (DISEASE-ALLIANCE) — gene / allele / affected-genomic-model
+  → Disease Ontology (`do_id`) associations, with `association_type`, ECO
+  `evidence_code`, `reference`, and provenance.
+- `expression` (EXPRESSION-ALLIANCE) — gene expression annotations (assay, stage,
+  anatomy / cellular-component / substructure terms with their qualifier lists).
+- `variant_alleles` (VARIANT-ALLELE, from the nested `4.0.0/…/COMBINED` rollup) —
+  alleles and variants per gene: identifiers/symbols/synonyms, associated and
+  affected genes, SO variant type, assembly coordinates (`start_position` /
+  `end_position` `Int64`), HGVS names, and the `has_disease_annotations` /
+  `has_phenotype_annotations` boolean flags.
+- `gene_descriptions` (GENE-DESCRIPTION-TSV, per-species shards concatenated;
+  headerless) — one automated Alliance gene description per gene.
+- `gene_cross_references` (GENECROSSREFERENCE) — Alliance gene ID → external
+  identifier (`cross_reference_id`, URL, resource page, `tax_id`).
+- `uniprot_cross_references` (CROSSREFERENCEUNIPROT; headerless two-column) —
+  UniProtKB identifier → external cross-reference.
+- `genetic_interactions` (INTERACTION-GEN) and `molecular_interactions`
+  (INTERACTION-MOL) — PSI-MITAB 2.7 (42 columns; the column header lives in the
+  comment block, the data is headerless). Fields are heterogeneous
+  controlled-vocabulary CURIEs (`psi-mi:"MI:nnnn"(label)`, pipe-delimited lists)
+  kept as documented plain strings; only `negative` is a boolean. Because MITAB
+  carries bare `"` as data, these (and the other reports) are read with quoting
+  disabled — except `variant_alleles`, whose source uses real CSV quoting to wrap
+  the rare symbol containing a literal tab.
+
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):
 
@@ -503,6 +564,16 @@ snapshots):
   `doi_versioned` columns), else `doi`. `depends_on` both `ncbi_pubmed` and
   `openalex_works`; unmatched PMIDs are not in the table, so consumers left-join
   from `articles` when they need them.
+- `ncbi_gene2_alliance` → `ncbi_gene2_alliance` (one row per `(entrez_id,
+  alliance_gene_id)`, with `tax_id`). Unlike `pmid_openalex`, the link is
+  authoritative, not heuristic: NCBI's `gene_info` cross-references the Alliance
+  gene directly in `db_xrefs` as `AllianceGenome:<curie>`, so the crosswalk strips
+  that prefix to recover the `AllianceGeneId`. `depends_on` both `ncbi_gene_info`
+  (the link source, Entrez IDs already current via gene_history) and
+  `alliancegenome` (every curie is confirmed against the union of the Alliance
+  outputs' gene columns; links to a curie absent from the release are dropped and
+  the count logged). Genes without an `AllianceGenome:` xref are not in the table,
+  so consumers left-join from `gene_info`.
 
 Research-integrity lists (pandas; small in-memory CSV sources):
 

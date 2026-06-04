@@ -229,6 +229,37 @@ class GoId(Identifier):
     pattern = r"GO:\d{7}"
 
 
+class AllianceGeneId(Identifier):
+    """Alliance of Genome Resources canonical gene curie.
+
+    The Alliance keys every gene by the contributing model-organism database's own
+    curie: one of ``HGNC`` (human), ``MGI`` (mouse), ``RGD`` (rat), ``ZFIN``
+    (zebrafish), ``FB`` (FlyBase), ``WB`` (WormBase), ``SGD`` (yeast), or
+    ``Xenbase`` (frog), followed by that database's accession (``HGNC:5``,
+    ``WB:WBGene00022277``, ``ZFIN:ZDB-GENE-020812-2``, …). No single accession
+    shape spans the eight databases, so the prefix set is the canonical anchor.
+    NCBI cross-references these in ``gene_info`` as ``AllianceGenome:<curie>``,
+    which is how ``ncbi_gene2_alliance`` links Entrez genes to Alliance genes.
+
+    Unlike most string identifiers (whose pattern is enforced only by
+    ``validate_polars``), this type also enforces the pattern in pandas, since the
+    Alliance pipelines are pandas-backed and the crosswalk join depends on the form.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"(?:HGNC|MGI|RGD|ZFIN|SGD|FB|WB|Xenbase):\S+"
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"AllianceGeneId: {len(bad)} values are not a recognised Alliance gene "
+                f"curie (prefix in HGNC/MGI/RGD/ZFIN/SGD/FB/WB/Xenbase), "
+                f"e.g. {bad.head(5).tolist()}"
+            )
+
+
 class Doi(Identifier):
     """Article-level DOI: URL prefix stripped, and no publisher version suffix.
 

@@ -1,4 +1,5 @@
 from lacuna_etl.datasets.registry import REGISTRY, register
+from lacuna_etl.datasets import alliancegenome as _alliancegenome  # noqa: F401
 from lacuna_etl.datasets import harmonizome as ________  # noqa: F401
 from lacuna_etl.datasets import icite as _  # noqa: F401
 from lacuna_etl.datasets import ncbi_nlmcatalog_reportedmedline as _______________  # noqa: F401
@@ -11,6 +12,7 @@ from lacuna_etl.datasets import ncbi_taxdump as _ncbi_taxdump  # noqa: F401
 from lacuna_etl.datasets import ensembl_tsv as _ensembl_tsv  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene2ensembl as _ncbi_gene2ensembl  # noqa: F401
 from lacuna_etl.datasets import ncbi_gene2accession as _ncbi_gene2accession  # noqa: F401
+from lacuna_etl.datasets import ncbi_gene2_alliance as _ncbi_gene2_alliance  # noqa: F401
 from lacuna_etl.datasets import openalex as _______  # noqa: F401
 from lacuna_etl.datasets import opentargets as ___________  # noqa: F401
 from lacuna_etl.datasets import pmid_openalex as __________  # noqa: F401
