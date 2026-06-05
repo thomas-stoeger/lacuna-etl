@@ -781,6 +781,51 @@ through, into two tables joined on `cluster_id`:
   (`best_known_protein_id`/`_gene`/`_name`), and `key_protein_ids` /
   `key_protein_xrefs`. `cluster_id` / `panther_group` are documented plain strings.
 
+ORCID — the ORCID Public Data File, summaries (`orcid`, streaming). The snapshot is a
+single ~43 GB `*_summaries.tar.gz` of ~20M tiny per-record XML files laid out as
+`ORCID_<release>_summaries/<NNN>/<orcid>.xml`, where `<NNN>` is a 000–999 directory
+bucket. Unlike PubMed / PubTator (many independent archives → parallel workers),
+ORCID is a *single* non-seekable gzip, so `extract` is one streaming pass: records
+stream in bucket order and each bucket boundary flushes per-table shards
+(`intermediate/<table>/<NNN>.parquet`) with a `_done/<NNN>.done` marker, so a re-run
+skips finished buckets and peak memory is bounded by one bucket. `transform`
+concatenates the shards per table and validates; `load` writes sidecars.
+Deactivated/locked records ship as `<error>` stubs (~4%) and are skipped with the
+count reported. The grain key is the ORCID iD (`Orcid`, canonical hyphenated). Ten
+tables — a `records` parent plus nine children keyed by `orcid`:
+
+- `records` — one row per iD: `given_names`/`family_name`/`credit_name`,
+  `name_visibility`, `locale`, `creation_method`, the submission / last-modified
+  timestamps, and the `claimed` / `verified_email` / `verified_primary_email`
+  booleans.
+- `other_names`, `researcher_urls`, `keywords` — the person-level lists.
+- `addresses` — one row per `(orcid, country)` (`CountryCode`, ISO 3166-1 alpha-2).
+- `person_external_identifiers` — person-level external IDs (Scopus Author ID,
+  ResearcherID, Loop, …): `external_id_type` + heterogeneous plain-string value/url.
+- `affiliations` — the seven ORCID affiliation sections (distinction, education,
+  employment, invited-position, membership, qualification, service) unified into one
+  table with an `affiliation_type` discriminator (they share an identical
+  `affiliation-summary` shape): `put_code`, `department_name`, `role_title`,
+  partial-ISO `start_date`/`end_date`, and the organization block
+  (`organization_name`/`_city`/`_region`/`_country` (`CountryCode`),
+  `disambiguated_organization_identifier` + `disambiguation_source` ∈ ROR / GRID /
+  RINGGOLD / FUNDREF / LEI, the id value left a plain string as it is heterogeneous
+  by source).
+- `fundings` — funding/grant summaries (`title`, `funding_type`, dates, the same
+  organization block).
+- `works` — one row per work summary (`put_code`, `title`, `subtitle`, `work_type`,
+  `journal_title`, partial-ISO `publication_date`, `url`, `source_name`).
+- `work_external_identifiers` — a work's external IDs keyed by `(orcid, put_code)`:
+  `external_id_type` (`doi`, `eid`, `issn`, `pmid`, `isbn`, `wosuid`, …) with the
+  raw `external_id_value` and ORCID's `external_id_normalized`. The bibliographic
+  crosswalk; the values are heterogeneous by type so they stay plain strings (the
+  PubTator / Open Targets precedent — a downstream crosswalk can type e.g. the DOIs).
+
+`work_type`, `funding_type`, the external-id types, and `disambiguation_source` are
+documented free strings, not `allowed_values`-constrained: they are large, curated,
+growable vocabularies, so a new value should not abort a run. The discriminator this
+pipeline itself generates — `affiliation_type` — is `allowed_values`-constrained.
+
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):
 
