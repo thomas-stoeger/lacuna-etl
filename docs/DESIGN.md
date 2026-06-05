@@ -826,6 +826,30 @@ documented free strings, not `allowed_values`-constrained: they are large, curat
 growable vocabularies, so a new value should not abort a run. The discriminator this
 pipeline itself generates — `affiliation_type` — is `allowed_values`-constrained.
 
+UniProt ID mapping (`uniprot_idmapping`, streaming). The snapshot is a single ~20 GB
+gzip (`idmapping.dat.gz`) of UniProt's all-species `idmapping.dat`: a plain
+three-column TSV, one row per cross-reference, `<accession> <id_type> <value>`
+(grouped by accession), billions of rows uncompressed. gzip is not seekable, so
+`extract` decompresses once (piped through the system `gzip`) and writes Parquet
+shards *directly* to the output, OpenAlex-style
+(`uniprot_idmapping/id_mappings/part_NNNNN.parquet` + an `id_mappings.yml` sidecar);
+shards are fixed-size and written atomically, and a re-run drops the last (possibly
+partial) shard and fast-forwards past the rows the survivors already cover (the gzip
+is re-scanned from the start, but no row is re-emitted), with a `_SUCCESS` marker to
+skip a finished extract. `transform` validates one shard at a time so peak memory is
+bounded by a single shard; `load` writes the sidecar. One table:
+
+- `id_mappings` — one row per source line. UniProt's first column mixes canonical and
+  isoform accessions (`P48347-2`), so — following the `doi` / `doi_versioned` split —
+  the base accession is typed `UniprotAccession` in `uniprot_accession` with the full
+  isoform form preserved in a sibling `isoform` column (null for canonical rows).
+  `id_type` (the mapped database: GI, EMBL, RefSeq, GeneID, Ensembl, KEGG, PDB,
+  STRING, HGNC, MGI, NCBI_TaxID, … ~100 values) and `value` are documented plain
+  strings, not `allowed_values`-constrained: the database set grows between releases
+  and the values are heterogeneous by type (the PubTator / Open Targets precedent), so
+  a new database does not abort a run. Consumers filter on `id_type` for a specific
+  crosswalk (e.g. UniProt↔GeneID, UniProt↔Ensembl, UniProt↔PDB).
+
 Crosswalks (pandas; derived from already-produced ETL outputs, not from raw
 snapshots):
 
