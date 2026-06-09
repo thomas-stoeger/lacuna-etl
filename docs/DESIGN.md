@@ -679,6 +679,37 @@ gene↔identifier crosswalk slice (no phenotype text). One table:
   `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
   symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
 
+Gene Ontology (`geneontology_basic`, pandas; the single `go-basic.obo` release,
+~48k `[Term]` stanzas). The `go-basic` flavour keeps only the propagation-safe,
+cycle-free relations (`is_a`, `part_of`, the three `regulates`) and never leaves
+the ontology. Same in-memory OBO shape as `disease_ontology`. The native term ID
+is the `GO:` curie (`GoId`, enforced in pandas), which keys the parent and every
+GO-referencing edge; external cross-references (`xref`, the SKOS matches) stay
+plain strings. Ten tables — the parent plus nine child tables keyed by `go_id`:
+
+- `terms` — one row per term: `name`, `namespace` (`allowed_values` ∈
+  {`molecular_function`, `biological_process`, `cellular_component`, `external`}),
+  `definition` (null where absent), `is_obsolete`, `comment`.
+- `term_parents` — one row per direct `is_a` edge (`go_id` → `parent_id`).
+- `term_relationships` — one row per typed non-`is_a` edge: `relation_type` (a
+  documented free string; go-basic carries `part_of`/`regulates`/
+  `positively_regulates`/`negatively_regulates`) and `related_id`.
+- `term_synonyms` — one row per `(go_id, synonym)`: `scope`
+  (`allowed_values`-constrained EXACT/BROAD/NARROW/RELATED) and optional
+  `synonym_type` label (e.g. `systematic_synonym`).
+- `term_alt_ids` — one row per secondary/merged GO id resolving to the term.
+- `term_xrefs` — one row per external cross-reference CURIE (trailing quoted
+  label dropped), kept verbatim.
+- `term_subsets` — one row per GO slim/subset the term belongs to.
+- `term_skos_matches` — one row per `(go_id, match_type, match_id)` from the
+  `property_value: skos:*Match` mappings (the `skos:` prefix dropped); `match_id`
+  the matched external CURIE, verbatim.
+- `term_replaced_by` — one row per obsolete term's definitive replacement.
+- `term_consider` — one row per obsolete term's advisory suggestion. `consider_id`
+  is a documented **plain string**, not a typed `GoId`: the pointer is a
+  non-authoritative curator suggestion and the release carries a non-canonical
+  value (a dropped-digit `GO:000666`), so it is kept verbatim.
+
 Human Disease Ontology (`disease_ontology`, pandas; the single OBO-format
 `doid.obo` release, ~14.7k `[Term]` stanzas). Small enough for memory, so it is an
 in-memory pandas pipeline: `extract` walks the file once into per-table row lists,

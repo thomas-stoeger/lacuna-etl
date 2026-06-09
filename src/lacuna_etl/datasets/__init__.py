@@ -31,5 +31,6 @@ from lacuna_etl.datasets import pubtator3 as _________  # noqa: F401
 from lacuna_etl.datasets import retractionwatch_hijackedjournals as _____________  # noqa: F401
 from lacuna_etl.datasets import retractionwatch_retractiondatabase as ______________  # noqa: F401
 from lacuna_etl.datasets import omim as _omim  # noqa: F401
+from lacuna_etl.datasets import geneontology_basic as _geneontology_basic  # noqa: F401
 
 __all__ = ["REGISTRY", "register"]

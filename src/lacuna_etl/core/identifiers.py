@@ -224,9 +224,24 @@ class NlmUniqueId(Identifier):
 
 
 class GoId(Identifier):
-    """Gene Ontology term ID, e.g. 'GO:0008150'."""
+    """Gene Ontology term ID, e.g. 'GO:0008150'.
+
+    Keys the `geneontology_basic` term graph and every edge that references a term.
+    Enforced in pandas as well as polars (the `geneontology_basic` pipeline is
+    pandas-backed and the GO id is its grain key), unlike most string identifiers.
+    """
     dtype = pd.StringDtype()
     pattern = r"GO:\d{7}"
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"GoId: {len(bad)} values are not a canonical GO id "
+                f"(r'{cls.pattern}'), e.g. {bad.head(5).tolist()}"
+            )
 
 
 class DiseaseOntologyId(Identifier):
