@@ -770,3 +770,110 @@ class OpenAlexContinentId(OpenAlexId):
 
 class OpenAlexCountryId(OpenAlexId):
     pattern = r"countries/[A-Z]{2}"
+
+
+# --- Identifier types for the additional source datasets -------------------
+# These key the omim / geneontology / reactome / gwas_catalog / interpro / ror /
+# nih_exporter / nsf_awards / biogrid_interactions pipelines. The string-typed
+# ones below subclass `_PandasPatternId`, which (like `_MeshUI`) enforces the
+# pattern in pandas as well as polars, because each is the grain key of a
+# pandas-backed table; the polars-backed tables that reuse them are unaffected
+# (they call `validate_polars`).
+
+class _PandasPatternId(Identifier):
+    """Base for string identifiers whose `pattern` is enforced in pandas too.
+
+    Subclasses set `pattern`. Mirrors `_MeshUI` but is dataset-agnostic.
+    """
+    dtype = pd.StringDtype()
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        if cls.pattern is None:
+            return
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"{cls.__name__}: {len(bad)} values not matching r'{cls.pattern}', "
+                f"e.g. {bad.head(5).tolist()}"
+            )
+
+
+class MimNumber(_PandasPatternId):
+    """OMIM MIM number, a 6-digit catalog id, e.g. '100050'.
+
+    Stored as a string (a fixed-width catalog key, not a numeric quantity). Keys
+    the `omim` mapping table.
+    """
+    pattern = r"\d{6}"
+
+
+class ReactomePathwayId(_PandasPatternId):
+    """Reactome stable pathway identifier, e.g. 'R-HSA-109582'.
+
+    Form is `R-<species>-<number>` where the 3-letter species code spans Reactome's
+    model organisms (HSA, MMU, DME, CEL, …). Keys the `reactome` pathway tables.
+    """
+    pattern = r"R-[A-Z]{3}-\d+"
+
+
+class InterProId(_PandasPatternId):
+    """InterPro entry accession, e.g. 'IPR000126'.
+
+    Keys the `interpro` entry tables and the protein-to-entry mapping (the latter
+    is polars-backed and validated via `validate_polars`).
+    """
+    pattern = r"IPR\d{6}"
+
+
+class GwasStudyAccession(_PandasPatternId):
+    """GWAS Catalog study accession, e.g. 'GCST000001'.
+
+    Keys the `gwas_catalog` study / ancestry / association tables.
+    """
+    pattern = r"GCST\d+"
+
+
+class EfoId(_PandasPatternId):
+    """Experimental Factor Ontology term id in CURIE form, e.g. 'EFO:0000270'.
+
+    The GWAS Catalog supplies EFO terms as URIs; only confirmed `EFO_` terms are
+    normalized to this CURIE and typed. The association table's `MAPPED_TRAIT_URI`
+    mixes EFO with Orphanet / HP / MONDO and so stays a plain string.
+    """
+    pattern = r"EFO:\d+"
+
+
+class NsfAwardId(_PandasPatternId):
+    """NSF award identifier, e.g. '2142912'.
+
+    A numeric string (historical award ids vary in width), kept as a string because
+    it is an opaque agency key, not a quantity. Keys the `nsf_awards` tables.
+    """
+    pattern = r"\d+"
+
+
+class NihCoreProjectNum(_PandasPatternId):
+    """NIH RePORTER core project number, e.g. 'R01GM123456'.
+
+    The grant's stable activity+IC+serial identifier (the full project number adds
+    a support-year/suffix). Opaque alphanumeric whose exact shape varies across
+    decades, so the pattern is deliberately permissive. Links `nih_exporter`
+    projects, publications, patents, and clinical studies.
+    """
+    pattern = r"[0-9A-Za-z]+"
+
+
+class NihApplicationId(NumericIdentifier):
+    """NIH RePORTER APPLICATION_ID — the unique key of one project-year row
+    (positive `Int64`). Dataset-internal; not cross-referenced by other datasets.
+    """
+
+
+class BiogridId(NumericIdentifier):
+    """BioGRID internal identifier (positive `Int64`).
+
+    Used for both the BioGRID interaction id and the BioGRID interactor ids in
+    `biogrid_interactions`. Dataset-internal; not cross-referenced elsewhere.
+    """

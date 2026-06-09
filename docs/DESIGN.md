@@ -195,6 +195,28 @@ downstream repos can join across datasets safely. Canonical forms:
   (`NZ_MCBT01000001.1`) and so do *not* use this type — columns that can hold those
   stay plain strings.
 
+- **MIM number** — OMIM's 6-digit catalog id (`\d{6}`), stored as a string (a
+  fixed-width catalog key, not a quantity). Keys the `omim` mapping. Enforced in
+  pandas.
+- **Reactome pathway ID** — `R-<species>-<number>` (`R-[A-Z]{3}-\d+`, e.g.
+  `R-HSA-109582`); the 3-letter species code spans Reactome's model organisms.
+  Keys the `reactome` pathway tables. Enforced in pandas.
+- **InterPro ID** — `IPR\d{6}` (e.g. `IPR000126`); keys the `interpro` entry
+  tables and the protein-to-entry mapping. Enforced in pandas (and polars).
+- **GWAS study accession** — `GCST\d+` (e.g. `GCST000001`); keys the
+  `gwas_catalog` study/ancestry/association tables. Enforced in pandas.
+- **EFO ID** — `EFO:\d+` CURIE; only confirmed EFO terms are typed. The GWAS
+  association `MAPPED_TRAIT_URI` mixes EFO with Orphanet/HP/MONDO and stays a
+  plain string.
+- **NSF award ID** — numeric string (`\d+`); an opaque NSF agency key. Keys the
+  `nsf_awards` tables. Enforced in pandas.
+- **NIH core project number** — the grant's stable activity+IC+serial id
+  (permissive `[0-9A-Za-z]+`, formats vary by decade); links `nih_exporter`
+  projects, publications, patents, and clinical studies.
+- **NIH application ID, BioGRID ID** — positive `Int64`; dataset-internal keys
+  (the NIH project-year row; the BioGRID interaction and interactor ids) not
+  cross-referenced by other datasets, validated to the positive-integer contract.
+
 Some machine-generated identifiers are intentionally *not* given a canonical
 identifier type and are stored as documented plain strings, following the
 PubTator precedent: Open Targets disease/phenotype IDs are heterogeneous CURIEs
