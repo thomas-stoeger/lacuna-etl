@@ -679,6 +679,25 @@ gene↔identifier crosswalk slice (no phenotype text). One table:
   `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
   symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
 
+Reactome (`reactome`, pandas; five headerless TSVs from the release). The
+pathway set, the pathway hierarchy, and the three "all levels" molecule→pathway
+mappings (a few million rows each, read with vectorised pandas). The grain key is
+the Reactome stable pathway id (`ReactomePathwayId`, `R-<species>-<number>`). Five
+tables:
+
+- `pathways` — one row per pathway: `pathway_id` (key), `pathway_name`, `species`.
+- `pathway_relations` — one row per direct hierarchy edge
+  (`parent_pathway_id` → `child_pathway_id`).
+- `ensembl2pathway`, `uniprot2pathway`, `ncbi2pathway` — one row per
+  `(source molecule, pathway)` mapping at all hierarchy levels, with
+  `pathway_browser_url`, `pathway_name`, `evidence_code` (IEA/TAS/…, a documented
+  free string), and `species`. The source-molecule column (`ensembl_id` /
+  `uniprot_id` / `ncbi_id`) is a documented **plain string**, not typed: the files
+  span every model organism and mix flavours (cross-species Ensembl ids,
+  isoform-suffixed UniProt accessions, and an `ncbi_id` that is overwhelmingly
+  Entrez but mixes in a few GenBank/RefSeq accessions), so none has a single
+  canonical form (the heterogeneous-id precedent).
+
 Gene Ontology (`geneontology_basic`, pandas; the single `go-basic.obo` release,
 ~48k `[Term]` stanzas). The `go-basic` flavour keeps only the propagation-safe,
 cycle-free relations (`is_a`, `part_of`, the three `regulates`) and never leaves
