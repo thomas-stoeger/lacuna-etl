@@ -37,5 +37,6 @@ from lacuna_etl.datasets import uniprot_fasta as _uniprot_fasta  # noqa: F401
 from lacuna_etl.datasets import ror as _ror  # noqa: F401
 from lacuna_etl.datasets import gwas_catalog as _gwas_catalog  # noqa: F401
 from lacuna_etl.datasets import biogrid_interactions as _biogrid_interactions  # noqa: F401
+from lacuna_etl.datasets import gtex as _gtex  # noqa: F401
 
 __all__ = ["REGISTRY", "register"]

@@ -679,6 +679,23 @@ gene↔identifier crosswalk slice (no phenotype text). One table:
   `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
   symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
 
+GTEx (`gtex`, pandas; the v10 gene-level GCT matrices). GTEx ships three matrices:
+the per-tissue median TPM (gene × 68 tissues) and the per-sample read counts / TPM
+(gene × ~19.7k samples). The two per-sample matrices melt to ~1.16 billion rows
+each, so this pipeline **by design materialises only** the compact `gene_median_tpm`
+summary in long form, plus a `samples` catalogue of the per-sample matrices' columns
+(the per-sample expression itself is intentionally not exploded). Two tables:
+
+- `gene_median_tpm` — one row per `(gene, tissue)` (~4.0M): `ensembl_gene_id`
+  (`EnsemblGeneId`, the GCT `Name` with version and `_PAR_Y` stripped — so the X/Y
+  PAR copies share it, hence non-unique; join via the versioned column for the exact
+  gene), `ensembl_gene_id_versioned` (the full GENCODE `Name`, the real key with
+  `tissue`; the Doi/DoiVersioned version-split precedent), `gene_symbol` (the GCT
+  `Description`), `tissue` (a documented free string), `median_tpm` (`Float64`).
+- `samples` — one row per `(matrix, sample_id)` cataloguing the `gene_reads` and
+  `gene_tpm` per-sample columns (`matrix` `allowed_values` ∈ {`gene_reads`,
+  `gene_tpm`}).
+
 BioGRID (`biogrid_interactions`, pandas; the single "tab3" file inside the
 release zip, ~2.9M interactions × 37 columns). One table:
 
