@@ -679,6 +679,21 @@ gene↔identifier crosswalk slice (no phenotype text). One table:
   `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
   symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
 
+BioGRID (`biogrid_interactions`, pandas; the single "tab3" file inside the
+release zip, ~2.9M interactions × 37 columns). One table:
+
+- `interactions` — one row per curated interaction record, keyed by
+  `biogrid_interaction_id` (`BiogridId`). Typed: the interactor gene ids
+  `entrez_gene_a/b` (`NcbiGeneId`, nullable — `-` for non-gene interactors), the
+  BioGRID interactor ids `biogrid_id_a/b` (`BiogridId`), the organism ids
+  `organism_id_a/b` (`NcbiTaxId`), a derived `pubmed_id` (`PubmedId`, parsed from
+  the `PUBMED:` publication source; null for the ~21k DOI-only sources),
+  `experimental_system_type` (`allowed_values` ∈ {`physical`, `genetic`}), and
+  `score` (`Float64`). The SWISS-PROT/TREMBL/REFSEQ accession columns are
+  pipe-delimited multi-value strings kept verbatim, and the symbol/synonym/
+  ontology-annotation columns stay documented plain strings. `-` is BioGRID's null
+  marker, normalised to null on read.
+
 GWAS Catalog (`gwas_catalog`, pandas; the NHGRI-EBI catalog's four download
 files). Faithful per-file projection, snake_cased. The cross-file key is the study
 accession (`GwasStudyAccession`, `GCST…`); `pubmed_id` is `PubmedId` throughout.
