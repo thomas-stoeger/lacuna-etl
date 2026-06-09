@@ -589,9 +589,24 @@ class Orcid(Identifier):
 
 
 class RorId(Identifier):
-    """Research Organization Registry ID, canonical URL form, e.g. 'https://ror.org/01an7q238'."""
+    """Research Organization Registry ID, canonical URL form, e.g. 'https://ror.org/01an7q238'.
+
+    Keys the `ror` organization tables (and every relationship edge). Enforced in
+    pandas as well as polars (the `ror` pipeline is pandas-backed and keys on it),
+    unlike most string identifiers.
+    """
     dtype = pd.StringDtype()
     pattern = r"https://ror\.org/[a-z0-9]+"
+
+    @classmethod
+    def validate(cls, s: pd.Series) -> None:
+        non_null = s.dropna()
+        bad = non_null[~non_null.str.match(rf"^(?:{cls.pattern})$")]
+        if not bad.empty:
+            raise ValueError(
+                f"RorId: {len(bad)} values are not a canonical ROR URL "
+                f"(r'{cls.pattern}'), e.g. {bad.head(5).tolist()}"
+            )
 
 
 class IssnL(Identifier):

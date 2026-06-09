@@ -679,6 +679,35 @@ gene↔identifier crosswalk slice (no phenotype text). One table:
   `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
   symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
 
+ROR (`ror`, pandas; the registry's single JSON array, schema v2, ~127k orgs,
+read from the release zip). The grain key is the ROR id (`RorId`, the canonical
+`https://ror.org/…` URL, enforced in pandas). The parent keeps one-per-org
+scalars; the repeated structures explode into child tables keyed by `ror_id`.
+Eight tables:
+
+- `organizations` — one row per org: `display_name` (the single `ror_display`
+  name), `established` (`Int64`), `status` (`allowed_values` ∈ {`active`,
+  `inactive`, `withdrawn`}), the primary (first) location flattened
+  (`primary_country_code` `CountryCode`, `primary_country_name`,
+  `primary_geonames_id`, `primary_lat`/`primary_lng` `Float64`), `wikidata_id`
+  (`WikidataId`, the preferred/first wikidata external id), and the
+  `created_date`/`last_modified_date` admin dates.
+- `org_names` — one row per `(name, name_type)` (`allowed_values` ∈ {`ror_display`,
+  `label`, `alias`, `acronym`}), with `lang`.
+- `org_types` — one row per organization type (`allowed_values` over the nine ROR
+  types).
+- `org_external_ids` — one row per id in each system's `all` list: `id_type`
+  (`allowed_values` ∈ {`fundref`, `grid`, `isni`, `wikidata`}), `value` (a plain
+  string — only the Wikidata id is typed, in the parent), `is_preferred`.
+- `org_relationships` — one row per edge: `related_ror_id` (`RorId`),
+  `relation_type` (`allowed_values` ∈ {`child`, `parent`, `related`,
+  `predecessor`, `successor`}), `label`.
+- `org_links` — one row per link: `link_type` (`allowed_values` ∈ {`website`,
+  `wikipedia`}), `url`.
+- `org_locations` — one row per location (geonames id, name, country/subdivision/
+  continent codes and names, `lat`/`lng`); the parent flattens the first.
+- `org_domains` — one row per DNS domain.
+
 UniProt Swiss-Prot (`uniprot_fasta`, pandas; the single gzipped FASTA
 `uniprot_sprot.fasta.gz`, ~575k reviewed entries). `extract` streams the gzip once,
 parsing each structured header and keeping the sequence; one table:

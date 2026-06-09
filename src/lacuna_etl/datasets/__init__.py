@@ -34,5 +34,6 @@ from lacuna_etl.datasets import omim as _omim  # noqa: F401
 from lacuna_etl.datasets import geneontology_basic as _geneontology_basic  # noqa: F401
 from lacuna_etl.datasets import reactome as _reactome  # noqa: F401
 from lacuna_etl.datasets import uniprot_fasta as _uniprot_fasta  # noqa: F401
+from lacuna_etl.datasets import ror as _ror  # noqa: F401
 
 __all__ = ["REGISTRY", "register"]
