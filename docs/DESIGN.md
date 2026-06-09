@@ -699,6 +699,27 @@ summary in long form, plus a `samples` catalogue of the per-sample matrices' col
   `gene_tpm` per-sample columns (`matrix` `allowed_values` ∈ {`gene_reads`,
   `gene_tpm`}).
 
+InterPro (`interpro`, pandas for the small reference files + polars streaming for
+the protein matches; release 108.0). The grain key is the InterPro entry accession
+(`InterProId`, `IPR\d{6}`). Four tables:
+
+- `entries` — one row per entry (~51k): `entry_type` (a documented free string:
+  Family/Domain/Active_site/Binding_site/Conserved_site/Repeat/
+  Homologous_superfamily/PTM), `name` (full name), `short_name`.
+- `entry_parents` — one row per direct hierarchy edge (`interpro_id` → `parent_id`),
+  recovered from the `ParentChildTreeFile` indentation.
+- `entry2go` — one row per `(interpro_id, go_id)` from the `interpro2go` mapping
+  (`go_id` is `GoId`).
+- `protein2entry` — one row per protein-region match from `protein2ipr.dat.gz`
+  (~1.18B rows). gzip is not seekable, so it is streamed (Python gzip → polars chunk
+  parse) into **sharded parquet written directly to the output** (`protein2entry/`
+  directory of `part_NNNNN.parquet`, the OpenAlex large-table convention), with a
+  `_SUCCESS` marker for restartability. `interpro_id` is typed (and validated per
+  shard); `uniprot_accession` is a documented plain string (spans reviewed and
+  unreviewed UniProtKB; validating ~1.18B values mid-stream is neither cheap nor
+  safe); `member_db_id` (the member-DB signature, PF/TIGR/G3DSA/SSF/…) is a plain
+  string; `start_pos`/`end_pos` are `Int64`.
+
 IntAct (`intact`, polars streaming; the PSI-MITAB 2.8 `intact.txt` ~1.79M rows ×
 42 columns / ~11 GB plus `intact_negative.txt`, inside one zip). The rows are very
 wide, so `extract` decompresses both members (restartable via done-markers) and
