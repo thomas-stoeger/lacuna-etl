@@ -679,6 +679,28 @@ gene↔identifier crosswalk slice (no phenotype text). One table:
   `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
   symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
 
+GWAS Catalog (`gwas_catalog`, pandas; the NHGRI-EBI catalog's four download
+files). Faithful per-file projection, snake_cased. The cross-file key is the study
+accession (`GwasStudyAccession`, `GCST…`); `pubmed_id` is `PubmedId` throughout.
+Four tables:
+
+- `studies` — one row per study line (this export does **not** carry the accession
+  column, so the table has no `study_accession`; `pubmed_id` is its only typed id):
+  author/journal/link, `disease_trait`, sample-size descriptions, `platform`,
+  `association_count` (`Int64`).
+- `ancestry` — one row per study ancestry group, keyed by `study_accession`:
+  sample descriptions, `stage`, `number_of_individuals` (`Int64`), broad ancestral
+  category, countries of origin/recruitment.
+- `efo_trait_mappings` — one row per `(disease_trait, EFO term)`: `efo_term`,
+  `efo_uri`, `efo_id` (`EfoId`, derived from `efo_uri` only when it is an `EFO_`
+  term — Orphanet/HP/MONDO URIs leave it null), `parent_term`, `parent_uri`.
+- `associations` — a faithful 38-column projection of the ontology-annotated
+  association table (~1.14M rows), keyed by `study_accession`. The SNP/gene columns
+  are heterogeneous, often multi-valued plain strings (kept verbatim); only the
+  three clearly-numeric statistics `p_value` / `pvalue_mlog` / `or_or_beta` are
+  `Float64` (the rare `Infinity` preserved as `inf`). `mapped_trait_uri` mixes EFO
+  with Orphanet/HP/MONDO and stays a plain string.
+
 ROR (`ror`, pandas; the registry's single JSON array, schema v2, ~127k orgs,
 read from the release zip). The grain key is the ROR id (`RorId`, the canonical
 `https://ror.org/…` URL, enforced in pandas). The parent keeps one-per-org
