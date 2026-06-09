@@ -208,8 +208,9 @@ downstream repos can join across datasets safely. Canonical forms:
 - **EFO ID** — `EFO:\d+` CURIE; only confirmed EFO terms are typed. The GWAS
   association `MAPPED_TRAIT_URI` mixes EFO with Orphanet/HP/MONDO and stays a
   plain string.
-- **NSF award ID** — numeric string (`\d+`); an opaque NSF agency key. Keys the
-  `nsf_awards` tables. Enforced in pandas.
+- **NSF award ID** — alphanumeric (`[0-9A-Za-z]+`): most are numeric grant ids but
+  NSF also issues contract-style ids (`49100421C0035`). An opaque agency key; keys
+  the `nsf_awards` tables. Enforced in pandas.
 - **NIH core project number** — the grant's stable activity+IC+serial id; an
   opaque key with no enforceable canonical character set (historical records carry
   spaces, asterisks, slashes, underscores), so no pattern is imposed
@@ -697,6 +698,25 @@ summary in long form, plus a `samples` catalogue of the per-sample matrices' col
 - `samples` — one row per `(matrix, sample_id)` cataloguing the `gene_reads` and
   `gene_tpm` per-sample columns (`matrix` `allowed_values` ∈ {`gene_reads`,
   `gene_tpm`}).
+
+NSF Awards (`nsf_awards`, pandas, restartable per zip; ~70 yearly/`Historical`
+zips of one JSON per award, ~646k awards). `extract` processes each zip once
+(skipping zips with a done-marker), reshaping awards into a parent plus child
+tables; `load` concatenates per table. The grain key is `award_id` (`NsfAwardId`).
+Six tables:
+
+- `awards` — one row per award: the scalars (title, instrument, CFDA, dates,
+  `total_intended_amount`/`award_amount`/`arra_amount` as `Float64`, abstract,
+  directorate/division) with the awardee and performance institutions flattened in
+  (name, city, state, country, ZIP, UEI, congressional district).
+- `award_pis` — one row per investigator: `nsf_id` (a plain string), role, names,
+  email, start/end dates.
+- `award_program_elements` / `award_program_references` — one row per program
+  element / reference code+text.
+- `award_obligations` — one row per `(award, fiscal_year)` with the obligated
+  `amount` (`Float64`); `fiscal_year` is `Int64`.
+- `award_funding` — one row per application-funding line (appropriation/fund codes
+  and names).
 
 NIH ExPORTER (`nih_exporter`, pandas, restartable per source file; ~41 fiscal-year
 zips per stream plus two single-file catalogs). `extract` writes one intermediate

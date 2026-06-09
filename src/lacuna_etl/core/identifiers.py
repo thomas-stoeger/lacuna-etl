@@ -876,12 +876,13 @@ class EfoId(_PandasPatternId):
 
 
 class NsfAwardId(_PandasPatternId):
-    """NSF award identifier, e.g. '2142912'.
+    """NSF award identifier, e.g. '2142912' or the contract form '49100421C0035'.
 
-    A numeric string (historical award ids vary in width), kept as a string because
-    it is an opaque agency key, not a quantity. Keys the `nsf_awards` tables.
+    Most are numeric grant ids, but NSF also issues alphanumeric contract-style ids,
+    so the pattern is alphanumeric. Kept as a string because it is an opaque agency
+    key, not a quantity. Keys the `nsf_awards` tables.
     """
-    pattern = r"\d+"
+    pattern = r"[0-9A-Za-z]+"
 
 
 class NihCoreProjectNum(_PandasPatternId):
