@@ -679,6 +679,16 @@ gene↔identifier crosswalk slice (no phenotype text). One table:
   `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
   symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
 
+UniProt Swiss-Prot (`uniprot_fasta`, pandas; the single gzipped FASTA
+`uniprot_sprot.fasta.gz`, ~575k reviewed entries). `extract` streams the gzip once,
+parsing each structured header and keeping the sequence; one table:
+
+- `proteins` — one row per entry, keyed by `accession` (`UniprotAccession`):
+  `entry_name` (mnemonic), `protein_name` (description), `organism_name` (`OS=`),
+  `tax_id` (`OX=`, `NcbiTaxId`), `gene_name` (`GN=`, null for ~4% of entries),
+  `protein_existence` (`PE=`, 1–5, `Int64`), `sequence_version` (`SV=`, `Int64`),
+  `sequence` (single-letter residues), and `length` (`Int64`, the residue count).
+
 Reactome (`reactome`, pandas; five headerless TSVs from the release). The
 pathway set, the pathway hierarchy, and the three "all levels" molecule→pathway
 mappings (a few million rows each, read with vectorised pandas). The grain key is
