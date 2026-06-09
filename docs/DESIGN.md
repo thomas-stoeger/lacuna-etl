@@ -669,6 +669,16 @@ strings (the PubTator precedent). Eight tables:
   datatypeProperty/annotationProperty).
 - `individuals` — one row per named individual.
 
+OMIM (`omim`, pandas; the single openly-redistributable `mim2gene.txt` TSV,
+~29.6k rows). OMIM as a whole is redistribution-restricted; `mim2gene.txt` is the
+gene↔identifier crosswalk slice (no phenotype text). One table:
+
+- `mim2gene` — one row per MIM entry, keyed by `mim_number` (`MimNumber`):
+  `mim_entry_type` (`allowed_values` ∈ {`gene`, `gene/phenotype`, `phenotype`,
+  `predominantly phenotypes`, `moved/removed`}), and the sparse cross-references
+  `entrez_id` (`NcbiGeneId`, nullable), `approved_gene_symbol` (the HGNC-approved
+  symbol string, nullable), `ensembl_gene_id` (`EnsemblGeneId`, human, nullable).
+
 Human Disease Ontology (`disease_ontology`, pandas; the single OBO-format
 `doid.obo` release, ~14.7k `[Term]` stanzas). Small enough for memory, so it is an
 in-memory pandas pipeline: `extract` walks the file once into per-table row lists,
