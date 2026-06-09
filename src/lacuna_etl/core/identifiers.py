@@ -888,11 +888,14 @@ class NihCoreProjectNum(_PandasPatternId):
     """NIH RePORTER core project number, e.g. 'R01GM123456'.
 
     The grant's stable activity+IC+serial identifier (the full project number adds
-    a support-year/suffix). Opaque alphanumeric whose exact shape varies across
-    decades, so the pattern is deliberately permissive. Links `nih_exporter`
-    projects, publications, patents, and clinical studies.
+    a support-year/suffix). It is an opaque key whose exact shape varies across
+    decades — most are plain alphanumeric, but historical/special records carry
+    spaces ('CIT S&SF'), asterisk/slash subproject markers ('N01DA57746*6'), and
+    underscores ('NOV190003877625_YCA3') — with no enforceable canonical character
+    set, so no pattern is imposed (presence-validated only where required). Links
+    `nih_exporter` projects, publications, patents, and clinical studies.
     """
-    pattern = r"[0-9A-Za-z]+"
+    pattern = None
 
 
 class NihApplicationId(NumericIdentifier):

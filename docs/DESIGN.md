@@ -210,9 +210,11 @@ downstream repos can join across datasets safely. Canonical forms:
   plain string.
 - **NSF award ID** — numeric string (`\d+`); an opaque NSF agency key. Keys the
   `nsf_awards` tables. Enforced in pandas.
-- **NIH core project number** — the grant's stable activity+IC+serial id
-  (permissive `[0-9A-Za-z]+`, formats vary by decade); links `nih_exporter`
-  projects, publications, patents, and clinical studies.
+- **NIH core project number** — the grant's stable activity+IC+serial id; an
+  opaque key with no enforceable canonical character set (historical records carry
+  spaces, asterisks, slashes, underscores), so no pattern is imposed
+  (presence-validated only where required). Links `nih_exporter` projects,
+  publications, patents, and clinical studies.
 - **NIH application ID, BioGRID ID** — positive `Int64`; dataset-internal keys
   (the NIH project-year row; the BioGRID interaction and interactor ids) not
   cross-referenced by other datasets, validated to the positive-integer contract.
@@ -695,6 +697,26 @@ summary in long form, plus a `samples` catalogue of the per-sample matrices' col
 - `samples` — one row per `(matrix, sample_id)` cataloguing the `gene_reads` and
   `gene_tpm` per-sample columns (`matrix` `allowed_values` ∈ {`gene_reads`,
   `gene_tpm`}).
+
+NIH ExPORTER (`nih_exporter`, pandas, restartable per source file; ~41 fiscal-year
+zips per stream plus two single-file catalogs). `extract` writes one intermediate
+shard per source unit and skips units whose shard already exists; `load`
+concatenates the shards per table. The `projects` grain key is `application_id`
+(`NihApplicationId`, unique per project-year row); the `core_project_num`
+(`NihCoreProjectNum`) is the grant's stable id linking across tables. Five tables:
+
+- `projects` — one row per project-year (~2.95M, FY1985–2025): the full faithful
+  ExPORTER column set (activity/IC/mechanism, org address, dates, costs as
+  `Float64`, `fy`/`support_year` as `Int64`, titles, terms, public-health
+  relevance). The `pi_ids`/`pi_names` PI lists are kept as raw `;`-delimited strings
+  (robust across decades; not exploded).
+- `project_abstracts` — one row per `application_id`, with `abstract_text`.
+- `project_publications` — the project↔PMID linkage (`PUBLNK`): `pubmed_id`
+  (`PubmedId`) × `core_project_num`. The publication *metadata* file
+  (`RePORTER_PUB_C`) is intentionally not ingested (covered by `ncbi_pubmed`/`icite`).
+- `patents` — `patent_id`, `patent_title`, `core_project_num`, `patent_org_name`.
+- `clinical_studies` — `core_project_num`, `nct_id` (ClinicalTrials.gov id, a plain
+  string), `study`, `study_status`.
 
 BioGRID (`biogrid_interactions`, pandas; the single "tab3" file inside the
 release zip, ~2.9M interactions × 37 columns). One table:
