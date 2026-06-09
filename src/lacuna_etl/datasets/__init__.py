@@ -40,5 +40,6 @@ from lacuna_etl.datasets import biogrid_interactions as _biogrid_interactions  #
 from lacuna_etl.datasets import gtex as _gtex  # noqa: F401
 from lacuna_etl.datasets import nih_exporter as _nih_exporter  # noqa: F401
 from lacuna_etl.datasets import nsf_awards as _nsf_awards  # noqa: F401
+from lacuna_etl.datasets import intact as _intact  # noqa: F401
 
 __all__ = ["REGISTRY", "register"]

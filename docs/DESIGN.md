@@ -699,6 +699,21 @@ summary in long form, plus a `samples` catalogue of the per-sample matrices' col
   `gene_tpm` per-sample columns (`matrix` `allowed_values` ∈ {`gene_reads`,
   `gene_tpm`}).
 
+IntAct (`intact`, polars streaming; the PSI-MITAB 2.8 `intact.txt` ~1.79M rows ×
+42 columns / ~11 GB plus `intact_negative.txt`, inside one zip). The rows are very
+wide, so `extract` decompresses both members (restartable via done-markers) and
+`transform` streams a lazy scan to a single parquet via `sink_parquet`. One table:
+
+- `interactions` — one row per MITAB line (~1.79M), a faithful snake_cased
+  projection of the 42 columns kept as documented plain strings (the multi-value
+  pipe-delimited fields verbatim; `interactor_b_id` null for intramolecular
+  interactions). Derived/typed convenience columns: `pubmed_id` (`PubmedId`, the
+  first `pubmed:` token of the publication identifiers), `taxid_a`/`taxid_b`
+  (numeric interactor taxids — plain `Int64`, not `NcbiTaxId`, because MITAB uses
+  negative special codes `-1`/`-2` for in-vitro/chemical synthesis), `negative`
+  (the MITAB negative-result flag, bool), and `is_negative_dataset` (bool: True for
+  rows from `intact_negative.txt`). MITAB's `-` empty marker is normalised to null.
+
 NSF Awards (`nsf_awards`, pandas, restartable per zip; ~70 yearly/`Historical`
 zips of one JSON per award, ~646k awards). `extract` processes each zip once
 (skipping zips with a done-marker), reshaping awards into a parent plus child
