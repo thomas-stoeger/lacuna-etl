@@ -158,7 +158,7 @@ downstream repos can join across datasets safely. Canonical forms:
   `MeshDescriptorId` (`D\d+`), `MeshQualifierId` (`Q\d+`), `MeshSupplementalId`
   (`C\d+`, Supplementary Concept Records), `MeshConceptId` (`M\d+`), `MeshTermId`
   (`T\d+`). PubMed's `mesh_headings.descriptor_ui`/`qualifier_ui` carry the same
-  `D…`/`Q…` form (left as documented strings there).
+  `D…`/`Q…` form and are typed `MeshDescriptorId`/`MeshQualifierId`.
 - **Alliance gene ID** — the Alliance of Genome Resources canonical gene curie:
   one of the eight model-organism-database prefixes `HGNC`/`MGI`/`RGD`/`ZFIN`/
   `SGD`/`FB`/`WB`/`Xenbase` followed by that database's accession. No single
@@ -186,8 +186,12 @@ downstream repos can join across datasets safely. Canonical forms:
 - **Ensembl Transcript / Protein ID** — `ENS[A-Z]*T\d+` / `ENS[A-Z]*P\d+`
   (unversioned; the species infix varies like the gene id — `ENST`/`ENSMUST`/…,
   `ENSP`/`ENSMUSP`/…). Key `ensembl_gtf` transcripts and CDS features; the
-  `.<version>` is carried in a separate column.
+  `.<version>` is carried in a separate column. The Open Targets `transcript_id`
+  columns (`opentargets_target.targets_transcripts`,
+  `opentargets_variant.variants_transcript_consequences`) are `EnsemblTranscriptId`.
 - **ChEMBL ID** — `CHEMBL\d+`; Open Targets' canonical drug-molecule identifier.
+  Types the Open Targets `drug_id` columns, including
+  `opentargets_target.targets_chemical_probes`.
 - **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix
   (some sources, e.g. Ensembl's TSV dumps, drop the version): the curated/predicted
   transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS *genomic* RefSeq
@@ -204,7 +208,9 @@ downstream repos can join across datasets safely. Canonical forms:
   pandas.
 - **Reactome pathway ID** — `R-<species>-<number>` (`R-[A-Z]{3}-\d+`, e.g.
   `R-HSA-109582`); the 3-letter species code spans Reactome's model organisms.
-  Keys the `reactome` pathway tables. Enforced in pandas.
+  Keys the `reactome` pathway tables, and types the Open Targets `pathway_id`
+  columns (`opentargets_target.targets_pathways`,
+  `opentargets_evidence_reactome.evidence_pathways`). Enforced in pandas.
 - **InterPro ID** — `IPR\d{6}` (e.g. `IPR000126`); keys the `interpro` entry
   tables and the protein-to-entry mapping. Enforced in pandas (and polars).
 - **GWAS study accession** — `GCST\d+` (e.g. `GCST000001`); keys the
@@ -365,7 +371,8 @@ pandas; one large `NLMCatalogRecordSet` XML, ~15.5k serial records). Parsed in a
 single `iterparse` pass. The parent key is `nlm_unique_id`
 (`NlmUniqueId`: the NLM Catalog `NlmUniqueID`, an opaque catalog key stored as a
 string — almost all digits, some older IDs carry a trailing check letter such as
-`2984730R`, so it is not an integer). Eight tables, the parent plus seven
+`2984730R`, so it is not an integer; PubMed's `articles.nlm_unique_id` carries the
+same type). Eight tables, the parent plus seven
 children keyed by `nlm_unique_id`:
 
 - `journals` — one row per record: titles (`title_main`, `medline_ta`),

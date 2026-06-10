@@ -26,7 +26,9 @@ Per-target child tables:
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import EnsemblGeneId, GoId, PubmedId
+from lacuna_etl.core.identifiers import (
+    ChemblId, EnsemblGeneId, EnsemblTranscriptId, GoId, PubmedId, ReactomePathwayId,
+)
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.opentargets._base import OpenTargetsProductPipeline
 from lacuna_etl.datasets.opentargets._helpers import concat_tagged, explode_struct_list
@@ -286,7 +288,7 @@ _TARGETS_DOC = {
 
 _TRANSCRIPTS_DOC = {
     "target_id":           ColumnSpec(identifier=EnsemblGeneId, required=True, description="Ensembl gene ID"),
-    "transcript_id":       ColumnSpec(description="Ensembl transcript ID"),
+    "transcript_id":       ColumnSpec(identifier=EnsemblTranscriptId, description="Ensembl transcript ID"),
     "biotype":             ColumnSpec(description="Transcript biotype"),
     "uniprot_id":          ColumnSpec(description="UniProt accession for the translated protein"),
     "is_uniprot_reviewed": ColumnSpec(description="Whether the UniProt entry is reviewed (Swiss-Prot)"),
@@ -356,7 +358,7 @@ _DB_XREFS_DOC = {
 
 _PATHWAYS_DOC = {
     "target_id":      ColumnSpec(identifier=EnsemblGeneId, required=True, description="Ensembl gene ID"),
-    "pathway_id":     ColumnSpec(description="Reactome pathway ID"),
+    "pathway_id":     ColumnSpec(identifier=ReactomePathwayId, description="Reactome pathway ID"),
     "pathway":        ColumnSpec(description="Pathway name"),
     "top_level_term": ColumnSpec(description="Top-level Reactome term"),
 }
@@ -386,7 +388,7 @@ _CHEMICAL_PROBES_DOC = {
     "probe_id":             ColumnSpec(description="Chemical probe ID"),
     "target_from_source_id": ColumnSpec(description="Source target ID the probe was reported against"),
     "drug_from_source_id":  ColumnSpec(description="Source drug ID"),
-    "drug_id":              ColumnSpec(description="ChEMBL ID of the probe molecule, if mapped (stored as-is)"),
+    "drug_id":              ColumnSpec(identifier=ChemblId, description="ChEMBL ID of the probe molecule, if mapped"),
     "mechanism_of_action":  ColumnSpec(description="Mechanism(s) of action (list)"),
     "origin":               ColumnSpec(description="Probe origin(s) (list)"),
     "control":              ColumnSpec(description="Recommended negative-control compound"),
