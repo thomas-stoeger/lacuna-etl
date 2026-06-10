@@ -84,6 +84,7 @@ def _process_batch(blob: bytes) -> pl.DataFrame:
 @register
 class UniprotIdmapping(DatasetPipeline):
     name = "uniprot_idmapping"
+    _TABLES = [(_TABLE, SCHEMA)]
 
     def _dat_gz(self) -> Path:
         matches = sorted(self.raw_path().glob("idmapping.dat.gz"))

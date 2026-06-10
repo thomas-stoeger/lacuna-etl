@@ -49,6 +49,11 @@ def _read_dmp(tar: tarfile.TarFile, member: str) -> list[list[str]]:
 @register
 class NcbiTaxdump(DatasetPipeline):
     name = "ncbi_taxdump"
+    _TABLES = [
+        ("taxonomy_nodes", NODES_SCHEMA),
+        ("taxonomy_names", NAMES_SCHEMA),
+        ("taxonomy_merged", MERGED_SCHEMA),
+    ]
 
     def extract(self) -> None:
         src = self.raw_path() / "taxdump.tar.gz"
@@ -103,11 +108,7 @@ class NcbiTaxdump(DatasetPipeline):
         pass
 
     def load(self) -> None:
-        for stem, schema in (
-            ("taxonomy_nodes", NODES_SCHEMA),
-            ("taxonomy_names", NAMES_SCHEMA),
-            ("taxonomy_merged", MERGED_SCHEMA),
-        ):
+        for stem, schema in self._TABLES:
             df = self.load_parquet(self.intermediate_path() / f"{stem}.parquet")
             self.save_parquet(df, self.output_path() / f"{stem}.parquet")
             self.save_schema_yaml(schema, stem)

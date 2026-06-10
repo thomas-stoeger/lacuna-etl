@@ -21,11 +21,11 @@ disease_ontology / Open Targets precedent). See docs/DESIGN.md for the table inv
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pandas as pd
 
 from lacuna_etl.core.identifiers import GoId
+from lacuna_etl.core.obo import find_obo_file, iter_stanzas, ref
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.registry import register
@@ -112,11 +112,6 @@ _SYNONYM_RE = re.compile(
 _SKOS_RE = re.compile(r"^skos:(?P<pred>\w+Match)\s+(?P<value>\S+)")
 
 
-def _ref(value: str) -> str:
-    """Strip a trailing OBO ' ! label' comment from an ID-reference value."""
-    return value.split(" ! ", 1)[0].strip()
-
-
 def _xref(value: str) -> str:
     """Keep just the CURIE token, dropping any trailing quoted description."""
     return value.split(" ", 1)[0].split('"', 1)[0].strip()
@@ -139,12 +134,6 @@ class GeneOntologyBasic(DatasetPipeline):
         ("term_consider", TERM_CONSIDER_SCHEMA),
     ]
 
-    def _obo_file(self) -> Path:
-        matches = sorted(self.raw_path().glob("*.obo"))
-        if len(matches) != 1:
-            raise FileNotFoundError(f"expected exactly one *.obo file under {self.raw_path()}, found {len(matches)}")
-        return matches[0]
-
     def _flush_term(self, tags: dict[str, list[str]]) -> None:
         """Turn one accumulated [Term] stanza's tags into output rows."""
         go_id = tags["id"][0]
@@ -157,20 +146,20 @@ class GeneOntologyBasic(DatasetPipeline):
             "comment": tags["comment"][0] if "comment" in tags else None,
         })
         for v in tags.get("alt_id", []):
-            self._alt_ids.append({"go_id": go_id, "alt_id": _ref(v)})
+            self._alt_ids.append({"go_id": go_id, "alt_id": ref(v)})
         for v in tags.get("is_a", []):
-            self._parents.append({"go_id": go_id, "parent_id": _ref(v)})
+            self._parents.append({"go_id": go_id, "parent_id": ref(v)})
         for v in tags.get("relationship", []):
             rel_type, _, rest = v.partition(" ")
-            self._relationships.append({"go_id": go_id, "relation_type": rel_type, "related_id": _ref(rest)})
+            self._relationships.append({"go_id": go_id, "relation_type": rel_type, "related_id": ref(rest)})
         for v in tags.get("subset", []):
             self._subsets.append({"go_id": go_id, "subset": v})
         for v in tags.get("xref", []):
             self._xrefs.append({"go_id": go_id, "xref": _xref(v)})
         for v in tags.get("replaced_by", []):
-            self._replaced.append({"go_id": go_id, "replaced_by_id": _ref(v)})
+            self._replaced.append({"go_id": go_id, "replaced_by_id": ref(v)})
         for v in tags.get("consider", []):
-            self._consider.append({"go_id": go_id, "consider_id": _ref(v)})
+            self._consider.append({"go_id": go_id, "consider_id": ref(v)})
         for v in tags.get("synonym", []):
             m = _SYNONYM_RE.match(v)
             if not m:
@@ -205,22 +194,8 @@ class GeneOntologyBasic(DatasetPipeline):
         self._replaced: list[dict] = []
         self._consider: list[dict] = []
 
-        tags: dict[str, list[str]] = {}
-        in_term = False
-        with open(self._obo_file(), encoding="utf-8") as fh:
-            for raw in fh:
-                line = raw.rstrip("\n")
-                if line.startswith("["):
-                    if in_term and tags:
-                        self._flush_term(tags)
-                    in_term = line == "[Term]"
-                    tags = {}
-                    continue
-                if not in_term or not line or ":" not in line:
-                    continue
-                key, _, value = line.partition(":")
-                tags.setdefault(key.strip(), []).append(value.strip())
-            if in_term and tags:
+        for stanza_type, tags in iter_stanzas(find_obo_file(self.raw_path())):
+            if stanza_type == "Term" and tags:
                 self._flush_term(tags)
 
         outputs = {

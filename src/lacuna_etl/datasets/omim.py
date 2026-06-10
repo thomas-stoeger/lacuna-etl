@@ -92,13 +92,6 @@ class Omim(DatasetPipeline):
         for stem, schema in self._TABLES:
             df = self.load_parquet(self.intermediate_path() / f"{stem}.parquet")
             df = df[list(schema)]
-            # entrez_id is a legitimately-sparse Entrez Gene id; NumericIdentifier
-            # casts it but its validate rejects any null, so check positivity on the
-            # non-null values only (the hgnc nullable-entrez precedent).
-            df["entrez_id"] = NcbiGeneId.cast(df["entrez_id"])
-            if (df["entrez_id"].dropna() <= 0).any():
-                raise ValueError("omim: non-positive entrez_id")
-            schema_no_entrez = {k: v for k, v in schema.items() if k != "entrez_id"}
-            df = self.apply_schema(df, schema_no_entrez)
+            df = self.apply_schema(df, schema)
             self.save_parquet(df, self.output_path() / f"{stem}.parquet")
             self.save_schema_yaml(schema, stem)

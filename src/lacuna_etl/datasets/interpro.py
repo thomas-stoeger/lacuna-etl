@@ -80,6 +80,10 @@ class Interpro(DatasetPipeline):
         ("entry2go", ENTRY2GO_SCHEMA),
     ]
 
+    def expected_schemas(self) -> dict:
+        # protein2entry is streamed to sharded parquet (not in _SMALL_TABLES); add it here.
+        return {**dict(self._SMALL_TABLES), "protein2entry": dict(PROTEIN2ENTRY_SCHEMA)}
+
     # ---- small reference tables ------------------------------------------
     def _build_entries(self) -> pd.DataFrame:
         entry = pd.read_csv(self.raw_path() / "entry.list", sep="\t", dtype=str, keep_default_na=False)

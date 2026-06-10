@@ -80,6 +80,7 @@ _INT_COLS = ["rna_nucleotide_gi", "protein_gi", "genomic_nucleotide_gi",
 @register
 class NcbiGene2Accession(DatasetPipeline):
     name = "ncbi_gene2accession"
+    _TABLES = [("gene2accession", SCHEMA)]
     depends_on = ["ncbi_gene_history"]
 
     def extract(self) -> None:

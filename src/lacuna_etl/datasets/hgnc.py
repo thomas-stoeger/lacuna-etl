@@ -352,17 +352,9 @@ class Hgnc(DatasetPipeline):
             df = df[list(schema)]
             if stem == "gene_groups":
                 df["gene_group_id"] = df["gene_group_id"].astype("Int64")
-            if stem == "genes":
-                # entrez_id is a legitimately-sparse Entrez Gene id; NumericIdentifier
-                # casts it but its validate rejects any null, so check positivity on
-                # the non-null values only (the alliancegenome nullable-PMID precedent).
-                df["entrez_id"] = NcbiGeneId.cast(df["entrez_id"])
-                if (df["entrez_id"].dropna() <= 0).any():
-                    raise ValueError("hgnc: non-positive entrez_id")
-                schema = {k: v for k, v in schema.items() if k != "entrez_id"}
             df = self.apply_schema(df, schema)
             self.save_parquet(df, self.output_path() / f"{stem}.parquet")
-            self.save_schema_yaml(stem=stem, schema=GENES_SCHEMA if stem == "genes" else schema)
+            self.save_schema_yaml(schema, stem)
 
 
 def _strip_trailing_dot(v: str | None) -> str | None:

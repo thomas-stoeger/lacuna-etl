@@ -24,6 +24,10 @@ class ColumnSpec:
     def validate(self, s: pd.Series) -> None:
         if self.identifier is not None:
             self.identifier.validate(s)
+        if self.required:
+            nulls = int(s.isna().sum())
+            if nulls:
+                raise ValueError(f"{s.name}: {nulls} nulls in required column")
         if self.allowed_values is not None:
             unexpected = set(s.dropna().unique()) - self.allowed_values
             if unexpected:

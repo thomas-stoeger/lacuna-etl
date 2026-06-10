@@ -28,6 +28,9 @@ class PredatoryListPipeline(DatasetPipeline):
             ),
         }
 
+    def expected_schemas(self) -> dict[str, dict[str, ColumnSpec]]:
+        return {self.table_name: self._schema()}
+
     def extract(self) -> None:
         # Headerless: column 0 is a row counter, column 1 is the name. Names that
         # contain commas are quoted in the source, so the parser yields exactly

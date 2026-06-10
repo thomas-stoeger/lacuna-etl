@@ -56,6 +56,7 @@ PROTEINS_SCHEMA = {
 @register
 class UniprotFasta(DatasetPipeline):
     name = "uniprot_fasta"
+    _TABLES = [("proteins", PROTEINS_SCHEMA)]
 
     def _fasta_file(self) -> Path:
         path = self.raw_path() / "uniprot_sprot.fasta.gz"

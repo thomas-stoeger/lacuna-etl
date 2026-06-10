@@ -21,11 +21,11 @@ docs/DESIGN.md for the full table inventory.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pandas as pd
 
 from lacuna_etl.core.identifiers import DiseaseOntologyId
+from lacuna_etl.core.obo import find_obo_file, iter_stanzas, ref
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.registry import register
@@ -108,16 +108,12 @@ _SYNONYM_RE = re.compile(
 )
 # Some synonyms carry their type not as the standard token but as a trailing OBO
 # modifier `{synonymtypedef="<label>"}`; the header `synonymtypedef:` lines map that
-# label back to its curie, so both encodings land as the same curie.
-_SYN_TYPEDEF_RE = re.compile(r'^synonymtypedef:\s+(?P<curie>\S+)\s+"(?P<label>[^"]*)"')
+# label back to its curie, so both encodings land as the same curie. Matches the tag
+# *value* (`<curie> "<label>"`), the header `synonymtypedef:` prefix already split off.
+_SYN_TYPEDEF_RE = re.compile(r'^(?P<curie>\S+)\s+"(?P<label>[^"]*)"')
 _SYN_MODIFIER_RE = re.compile(r'synonymtypedef="(?P<label>[^"]+)"')
 # `property_value: <predicate> "<curie>" xsd:string` (SKOS mappings).
 _PROP_RE = re.compile(r'^(?P<pred>\S+)\s+"(?P<value>[^"]*)"')
-
-
-def _ref(value: str) -> str:
-    """Strip a trailing OBO ' ! label' comment from an ID-reference value."""
-    return value.split(" ! ", 1)[0].strip()
 
 
 @register
@@ -137,12 +133,6 @@ class DiseaseOntology(DatasetPipeline):
         ("term_consider", TERM_CONSIDER_SCHEMA),
     ]
 
-    def _obo_file(self) -> Path:
-        matches = sorted(self.raw_path().glob("*.obo"))
-        if len(matches) != 1:
-            raise FileNotFoundError(f"expected exactly one *.obo file under {self.raw_path()}, found {len(matches)}")
-        return matches[0]
-
     def _flush_term(self, tags: dict[str, list[str]]) -> None:
         """Turn one accumulated [Term] stanza's tags into output rows."""
         doid = tags["id"][0]
@@ -156,19 +146,19 @@ class DiseaseOntology(DatasetPipeline):
             "creation_date": tags["creation_date"][0] if "creation_date" in tags else None,
         })
         for v in tags.get("alt_id", []):
-            self._alt_ids.append({"doid": doid, "alt_id": _ref(v)})
+            self._alt_ids.append({"doid": doid, "alt_id": ref(v)})
         for v in tags.get("is_a", []):
-            self._parents.append({"doid": doid, "parent_id": _ref(v)})
+            self._parents.append({"doid": doid, "parent_id": ref(v)})
         for v in tags.get("subset", []):
             self._subsets.append({"doid": doid, "subset": v})
         for v in tags.get("xref", []):
             self._xrefs.append({"doid": doid, "xref": v})
         for v in tags.get("disjoint_from", []):
-            self._disjoint.append({"doid": doid, "disjoint_from_id": _ref(v)})
+            self._disjoint.append({"doid": doid, "disjoint_from_id": ref(v)})
         for v in tags.get("replaced_by", []):
-            self._replaced.append({"doid": doid, "replaced_by_id": _ref(v)})
+            self._replaced.append({"doid": doid, "replaced_by_id": ref(v)})
         for v in tags.get("consider", []):
-            self._consider.append({"doid": doid, "consider_id": _ref(v)})
+            self._consider.append({"doid": doid, "consider_id": ref(v)})
         for v in tags.get("synonym", []):
             m = _SYNONYM_RE.match(v)
             if not m:
@@ -209,27 +199,15 @@ class DiseaseOntology(DatasetPipeline):
         self._consider: list[dict] = []
         self._syn_typedefs: dict[str, str] = {}  # synonym-type label -> curie (from header)
 
-        tags: dict[str, list[str]] = {}
-        in_term = False
-        with open(self._obo_file(), encoding="utf-8") as fh:
-            for raw in fh:
-                line = raw.rstrip("\n")
-                if line.startswith("["):
-                    if in_term and tags:
-                        self._flush_term(tags)
-                    in_term = line == "[Term]"
-                    tags = {}
-                    continue
-                if not in_term:
-                    td = _SYN_TYPEDEF_RE.match(line)  # header synonymtypedef declarations
+        for stanza_type, tags in iter_stanzas(find_obo_file(self.raw_path())):
+            if stanza_type == "Term":
+                if tags:
+                    self._flush_term(tags)
+            else:  # header (yielded first): map synonymtypedef labels back to curies
+                for decl in tags.get("synonymtypedef", []):
+                    td = _SYN_TYPEDEF_RE.match(decl)
                     if td:
                         self._syn_typedefs[td["label"]] = td["curie"]
-                if not in_term or not line or ":" not in line:
-                    continue
-                key, _, value = line.partition(":")
-                tags.setdefault(key.strip(), []).append(value.strip())
-            if in_term and tags:
-                self._flush_term(tags)
 
         outputs = {
             "terms": self._terms,

@@ -52,6 +52,7 @@ def update_entrez_ids(s: pd.Series) -> pd.Series:
 @register
 class NcbiGeneHistory(DatasetPipeline):
     name = "ncbi_gene_history"
+    _TABLES = [("gene_history", SCHEMA)]
 
     def extract(self) -> None:
         src = self.raw_path() / "gene_history.gz"

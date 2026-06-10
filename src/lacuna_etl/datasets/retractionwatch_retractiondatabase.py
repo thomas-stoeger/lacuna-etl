@@ -159,6 +159,15 @@ def _clean_scalar(s: pd.Series) -> pd.Series:
 @register
 class RetractionWatchRetractionDatabase(DatasetPipeline):
     name = "retractionwatch_retractiondatabase"
+    _TABLES = [
+        ("retractions", RETRACTIONS_SCHEMA),
+        ("retraction_reasons", REASONS_SCHEMA),
+        ("retraction_subjects", SUBJECTS_SCHEMA),
+        ("retraction_authors", AUTHORS_SCHEMA),
+        ("retraction_countries", COUNTRIES_SCHEMA),
+        ("retraction_institutions", INSTITUTIONS_SCHEMA),
+        ("retraction_urls", URLS_SCHEMA),
+    ]
 
     def extract(self) -> None:
         df = pd.read_csv(self.raw_path() / "retraction_watch.csv", dtype=str, usecols=_USECOLS)
@@ -257,16 +266,7 @@ class RetractionWatchRetractionDatabase(DatasetPipeline):
         return tmp.drop_duplicates().sort_values(["record_id", out_col]).reset_index(drop=True)
 
     def load(self) -> None:
-        tables = {
-            "retractions": RETRACTIONS_SCHEMA,
-            "retraction_reasons": REASONS_SCHEMA,
-            "retraction_subjects": SUBJECTS_SCHEMA,
-            "retraction_authors": AUTHORS_SCHEMA,
-            "retraction_countries": COUNTRIES_SCHEMA,
-            "retraction_institutions": INSTITUTIONS_SCHEMA,
-            "retraction_urls": URLS_SCHEMA,
-        }
-        for table, schema in tables.items():
+        for table, schema in self._TABLES:
             df = self.load_parquet(self.intermediate_path() / f"{table}.parquet")
             df = df[list(schema)]
             self.save_parquet(df, self.output_path() / f"{table}.parquet")

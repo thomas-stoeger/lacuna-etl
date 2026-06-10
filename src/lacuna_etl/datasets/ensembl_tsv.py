@@ -93,6 +93,12 @@ _ENA_RENAME = {
 @register
 class EnsemblTsv(DatasetPipeline):
     name = "ensembl_tsv"
+    _TABLES = [
+        ("entrez", ENTREZ_SCHEMA),
+        ("refseq", REFSEQ_SCHEMA),
+        ("uniprot", UNIPROT_SCHEMA),
+        ("ena", ENA_SCHEMA),
+    ]
 
     def _read_xref(self, db: str, xref_name: str) -> pd.DataFrame:
         """Concatenate the per-species '<db>' dumps into one xref table."""
@@ -134,12 +140,7 @@ class EnsemblTsv(DatasetPipeline):
         pass
 
     def load(self) -> None:
-        for stem, schema in (
-            ("entrez", ENTREZ_SCHEMA),
-            ("refseq", REFSEQ_SCHEMA),
-            ("uniprot", UNIPROT_SCHEMA),
-            ("ena", ENA_SCHEMA),
-        ):
+        for stem, schema in self._TABLES:
             df = self.load_parquet(self.intermediate_path() / f"{stem}.parquet")
             self.save_parquet(df, self.output_path() / f"{stem}.parquet")
             self.save_schema_yaml(schema, stem)

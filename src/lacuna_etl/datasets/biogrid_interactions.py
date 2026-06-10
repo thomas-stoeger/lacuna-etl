@@ -88,19 +88,10 @@ INTERACTIONS_SCHEMA = {
     "organism_name_b": ColumnSpec(description="Organism name of interactor B"),
 }
 
-# Nullable numeric-identifier columns: cast + positivity-check on non-null values
-# (NumericIdentifier.validate rejects any null), excluded from apply_schema's strict
-# validate (the hgnc nullable-entrez precedent).
-_NULLABLE_NUMERIC = {
-    "entrez_gene_a": NcbiGeneId, "entrez_gene_b": NcbiGeneId,
-    "organism_id_a": NcbiTaxId, "organism_id_b": NcbiTaxId,
-    "pubmed_id": PubmedId,
-}
-
-
 @register
 class BiogridInteractions(DatasetPipeline):
     name = "biogrid_interactions"
+    _TABLES = [("interactions", INTERACTIONS_SCHEMA)]
 
     def _tab3_zip(self) -> Path:
         zips = sorted(self.raw_path().glob("*.zip"))
@@ -136,11 +127,6 @@ class BiogridInteractions(DatasetPipeline):
         df = self.load_parquet(self.intermediate_path() / "interactions.parquet")
         df = df[list(INTERACTIONS_SCHEMA)]
         df["score"] = df["score"].astype("Float64")
-        for col, idt in _NULLABLE_NUMERIC.items():
-            df[col] = idt.cast(df[col])
-            if (df[col].dropna() <= 0).any():
-                raise ValueError(f"biogrid_interactions: non-positive {col}")
-        schema = {k: v for k, v in INTERACTIONS_SCHEMA.items() if k not in _NULLABLE_NUMERIC}
-        df = self.apply_schema(df, schema)
+        df = self.apply_schema(df, INTERACTIONS_SCHEMA)
         self.save_parquet(df, self.output_path() / "interactions.parquet")
         self.save_schema_yaml(INTERACTIONS_SCHEMA, "interactions")

@@ -86,6 +86,7 @@ def _normalize_title(s: pd.Series) -> pd.Series:
 @register
 class PmidOpenalex(DatasetPipeline):
     name = "pmid_openalex"
+    _TABLES = [("pmid_openalex", SCHEMA)]
     depends_on = ["openalex_works", "ncbi_pubmed"]
 
     def _pubmed_articles_path(self):

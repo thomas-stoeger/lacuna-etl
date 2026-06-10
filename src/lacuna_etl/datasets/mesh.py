@@ -176,7 +176,8 @@ SUPPLEMENTAL_HEADING_MAPPED_TO_SCHEMA = {
 
 SUPPLEMENTAL_INDEXING_INFORMATION_SCHEMA = {
     "scr_ui": ColumnSpec(identifier=MeshSupplementalId, required=True, description="MeSH SCR UI"),
-    "descriptor_ui": ColumnSpec(identifier=MeshDescriptorId, required=True, description="Descriptor carrying additional indexing information for the SCR"),
+    # Some MeSH IndexingInformation entries carry no DescriptorReferredTo, so this is nullable.
+    "descriptor_ui": ColumnSpec(identifier=MeshDescriptorId, description="Descriptor carrying additional indexing information for the SCR (nullable: some entries reference no descriptor)"),
     "qualifier_ui": ColumnSpec(identifier=MeshQualifierId, description="Qualifier paired with the descriptor, if any"),
 }
 
@@ -192,7 +193,7 @@ SUPPLEMENTAL_PREVIOUS_INDEXING_SCHEMA = {
 
 SUPPLEMENTAL_SOURCES_SCHEMA = {
     "scr_ui": ColumnSpec(identifier=MeshSupplementalId, required=True, description="MeSH SCR UI"),
-    "source": ColumnSpec(description="Citation/source where the substance was reported", required=True),
+    "source": ColumnSpec(description="Citation/source where the substance was reported (nullable: a few MeSH Source entries are empty)"),
 }
 
 # --------------------------------------------------------------------------

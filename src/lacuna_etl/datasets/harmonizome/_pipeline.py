@@ -210,6 +210,18 @@ _SKIP_REASON: dict[str, str] = {
 class Harmonizome(DatasetPipeline):
     name = "harmonizome"
     depends_on = ["ncbi_gene_history"]
+    _TABLES = [
+        ("edges", EDGES_SCHEMA),
+        ("genes", GENES_SCHEMA),
+        ("attributes", ATTRIBUTES_SCHEMA),
+        ("collections", COLLECTIONS_SCHEMA),
+    ]
+
+    def expected_schemas(self) -> dict:
+        # processing_report.{parquet,yml,tsv} is emitted by write_report(), separately
+        # from the four data tables in _TABLES; include it so its sidecar is tracked too.
+        from lacuna_etl.datasets.harmonizome._report import REPORT_SCHEMA
+        return {**dict(self._TABLES), "processing_report": dict(REPORT_SCHEMA)}
 
     # --- extract ---------------------------------------------------------
 
@@ -394,12 +406,7 @@ class Harmonizome(DatasetPipeline):
         coll_df = pd.read_parquet(self.intermediate_path() / "collections.parquet")
         _save_parquet(coll_df, out / "collections.parquet")
 
-        for name, schema in [
-            ("edges", EDGES_SCHEMA),
-            ("genes", GENES_SCHEMA),
-            ("attributes", ATTRIBUTES_SCHEMA),
-            ("collections", COLLECTIONS_SCHEMA),
-        ]:
+        for name, schema in self._TABLES:
             data = {col: spec.yaml_entry() for col, spec in schema.items()}
             (out / f"{name}.yml").write_text(yaml.dump(data, sort_keys=False, allow_unicode=True))
 

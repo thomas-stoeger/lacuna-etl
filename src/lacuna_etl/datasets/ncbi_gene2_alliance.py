@@ -54,6 +54,7 @@ _ALLIANCE_CURIE_RE = rf"^(?:{AllianceGeneId.pattern})$"
 @register
 class NcbiGene2Alliance(DatasetPipeline):
     name = "ncbi_gene2_alliance"
+    _TABLES = [("ncbi_gene2_alliance", SCHEMA)]
     depends_on = ["ncbi_gene_info", "alliancegenome"]
 
     def _gene_info_path(self):

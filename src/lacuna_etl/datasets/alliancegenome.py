@@ -515,24 +515,6 @@ def _resolve_alliance_gene_ids(ids: pd.Series, entrez_to_curie: dict[int, str]) 
     return out
 
 
-def _apply_schema_nullable_pmid(df: pd.DataFrame, schema: dict[str, ColumnSpec], pmid_cols: set[str]) -> pd.DataFrame:
-    """Like ``DatasetPipeline.apply_schema`` but PubMed-ID columns may be null.
-
-    ``NumericIdentifier.validate`` rejects any null, but a lifted-out ``pubmed_id`` is
-    legitimately sparse, so those columns are cast and checked for positivity on the
-    non-null values only (the retraction-watch nullable-PMID precedent).
-    """
-    df = df[list(schema)]
-    for col, spec in schema.items():
-        df[col] = spec.cast(df[col])
-        if col in pmid_cols:
-            if (df[col].dropna() <= 0).any():
-                raise ValueError(f"{col}: non-positive PubMed ID")
-        else:
-            spec.validate(df[col])
-    return df
-
-
 @register
 class AllianceGenome(DatasetPipeline):
     name = "alliancegenome"
@@ -624,7 +606,7 @@ class AllianceGenome(DatasetPipeline):
         df["pubmed_id"] = _first_pubmed(df["reference"])
         _null_strings(df, {"tax_id", "pubmed_id"})
         df["tax_id"] = _strip_taxon(df["tax_id"])
-        df = _apply_schema_nullable_pmid(df, DISEASE_SCHEMA, {"pubmed_id"})
+        df = self.apply_schema(df[list(DISEASE_SCHEMA)], DISEASE_SCHEMA)
         self.save_parquet(df, self.intermediate_path() / "disease_associations.parquet")
 
     def _extract_expression(self) -> None:
@@ -695,5 +677,5 @@ class AllianceGenome(DatasetPipeline):
         derived = {"negative", "pubmed_id", "interactor_a_taxid", "interactor_b_taxid",
                    "interactor_a_gene_id", "interactor_b_gene_id"}
         _null_strings(df, derived)
-        df = _apply_schema_nullable_pmid(df, MITAB_SCHEMA, {"pubmed_id"})
+        df = self.apply_schema(df[list(MITAB_SCHEMA)], MITAB_SCHEMA)
         self.save_parquet(df, self.intermediate_path() / f"{stem}.parquet")

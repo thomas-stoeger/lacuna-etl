@@ -53,6 +53,10 @@ ISSNS_SCHEMA = {
 @register
 class RetractionWatchHijackedJournals(DatasetPipeline):
     name = "retractionwatch_hijackedjournals"
+    _TABLES = [
+        ("hijacked_journals", JOURNALS_SCHEMA),
+        ("hijacked_journal_issns", ISSNS_SCHEMA),
+    ]
 
     def extract(self) -> None:
         # header=1: the first CSV record is a (two-physical-line) banner; the
@@ -105,10 +109,7 @@ class RetractionWatchHijackedJournals(DatasetPipeline):
         return tmp[["record_id", "role", "issn"]].drop_duplicates()
 
     def load(self) -> None:
-        for table, schema in (
-            ("hijacked_journals", JOURNALS_SCHEMA),
-            ("hijacked_journal_issns", ISSNS_SCHEMA),
-        ):
+        for table, schema in self._TABLES:
             df = self.load_parquet(self.intermediate_path() / f"{table}.parquet")
             df = self.apply_schema(df, schema)
             df = df[list(schema)]

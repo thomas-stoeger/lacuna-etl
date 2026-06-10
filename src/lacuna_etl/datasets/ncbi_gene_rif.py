@@ -34,6 +34,7 @@ _RENAME = {
 @register
 class NcbiGeneRif(DatasetPipeline):
     name = "ncbi_generifs"
+    _TABLES = [("gene_rif", SCHEMA)]
     depends_on = ["ncbi_gene_history"]
 
     def extract(self) -> None:

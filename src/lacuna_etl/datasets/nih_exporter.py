@@ -173,6 +173,9 @@ class NihExporter(DatasetPipeline):
 
     _TABLES = [_PROJECTS, _ABSTRACTS, _PUBLICATIONS, _PUBLICATION_METADATA, _PATENTS, _CLINICAL]
 
+    def expected_schemas(self) -> dict:
+        return {stem: dict(schema) for stem, schema, *_ in self._TABLES}
+
     def _read_csv(self, source: Path) -> pd.DataFrame:
         """Read an ExPORTER CSV (plain or the single CSV inside a yearly zip), latin-1."""
         kwargs = dict(encoding="latin-1", dtype=str, keep_default_na=False, na_values=[""])

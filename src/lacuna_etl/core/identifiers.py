@@ -138,11 +138,12 @@ class NumericIdentifier(Identifier):
 
     @classmethod
     def validate(cls, s: pd.Series) -> None:
+        # Null-tolerant, like the string identifiers: validate dtype and positivity on
+        # the non-null values, and let ColumnSpec enforce `required`. A non-required
+        # numeric id may therefore be nullable without a per-pipeline workaround.
         if not pd.api.types.is_integer_dtype(s):
             raise TypeError(f"{cls.__name__}: expected integer dtype, got {s.dtype}")
-        if s.isna().any():
-            raise ValueError(f"{cls.__name__}: unexpected null values")
-        if (s <= 0).any():
+        if (s.dropna() <= 0).any():
             raise ValueError(f"{cls.__name__}: IDs must be positive")
 
     @classmethod

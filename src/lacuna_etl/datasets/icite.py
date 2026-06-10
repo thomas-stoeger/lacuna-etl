@@ -63,6 +63,7 @@ OPEN_CITATION_SCHEMA = {
 @register
 class ICite(DatasetPipeline):
     name = "icite"
+    _TABLES = [("icite", SCHEMA), ("open_citation_collection", OPEN_CITATION_SCHEMA)]
 
     def extract(self) -> None:
         self._extract_metadata()
