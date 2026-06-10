@@ -888,15 +888,16 @@ class NsfAwardId(_PandasPatternId):
 class NihCoreProjectNum(_PandasPatternId):
     """NIH RePORTER core project number, e.g. 'R01GM123456'.
 
-    The grant's stable activity+IC+serial identifier (the full project number adds
-    a support-year/suffix). It is an opaque key whose exact shape varies across
-    decades — most are plain alphanumeric, but historical/special records carry
-    spaces ('CIT S&SF'), asterisk/slash subproject markers ('N01DA57746*6'), and
-    underscores ('NOV190003877625_YCA3') — with no enforceable canonical character
-    set, so no pattern is imposed (presence-validated only where required). Links
-    `nih_exporter` projects, publications, patents, and clinical studies.
+    The grant's stable activity+IC+serial identifier (the full project number adds a
+    support-year/suffix) and a main join key across the `nih_exporter` tables
+    (projects, publications, patents, clinical studies). Most are plain
+    upper-alphanumeric, but historical/special records carry spaces ('CIT SSF'),
+    ampersands ('CIT S&SF'), asterisk subproject markers ('N01DA57746*6'), and
+    underscores ('NOV190003877625_YCA3'). The pattern is anchored to the character
+    set observed across the whole release: an upper-alphanumeric start then
+    upper-alphanumerics plus space / `&` / `*` / `_` / `-`.
     """
-    pattern = None
+    pattern = r"[0-9A-Z][0-9A-Z &*_-]*"
 
 
 class NihApplicationId(NumericIdentifier):

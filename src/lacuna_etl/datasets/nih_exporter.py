@@ -13,10 +13,11 @@ unique project-year row id); the ``core_project_num`` (``NihCoreProjectNum``) is
 grant's stable identifier that links projects to abstracts, publications, patents, and
 clinical studies. ``pubmed_id`` is ``PubmedId``. The PI list columns are kept as raw
 delimited strings (the source's ``;``-separated ``PI_IDS``/``PI_NAMEs``, robust across
-41 years of formatting). The ExPORTER publication-*metadata* file (``RePORTER_PUB_C``)
-is intentionally not ingested — that bibliographic data is already covered by
-``ncbi_pubmed``/``icite``; only the project↔PMID *linkage* (``PUBLNK``) is kept. The
-files are latin-1 encoded. See docs/DESIGN.md for the table inventory.
+41 years of formatting). Both ExPORTER publication files are ingested: the project↔PMID
+*linkage* (``PUBLNK`` → ``project_publications``) and the publication *metadata*
+(``PUB_C`` → ``publications``, deduplicated on PMID since a publication is re-listed
+under each linked fiscal year). The files are latin-1 encoded. See docs/DESIGN.md for
+the table inventory.
 """
 from __future__ import annotations
 
@@ -125,22 +126,52 @@ CLINICAL_STUDIES_SCHEMA = {
 }
 _CLINICAL_RENAME = {"CORE_PROJECT_NUMBER": "core_project_num", "CLINICALTRIALS.GOV_ID": "nct_id", "STUDY": "study", "STUDY_STATUS": "study_status"}
 
+# Publication metadata (RePORTER_PUB_C). Grain is one row per PMID — the same
+# publication is listed under each fiscal year a linked project was active, so the
+# concatenated shards are deduplicated on pubmed_id in load.
+PUBLICATION_METADATA_SCHEMA = {
+    "pubmed_id": ColumnSpec(identifier=PubmedId, required=True, description="PubMed id; the grain key (deduplicated across fiscal-year files)"),
+    "pub_title": ColumnSpec(description="Publication title"),
+    "author_list": ColumnSpec(description="Author list (raw delimited string)"),
+    "affiliation": ColumnSpec(description="Author affiliation(s)"),
+    "country": ColumnSpec(description="Publication country"),
+    "journal_title": ColumnSpec(description="Journal title"),
+    "journal_title_abbr": ColumnSpec(description="Journal title abbreviation"),
+    "journal_volume": ColumnSpec(description="Journal volume"),
+    "journal_issue": ColumnSpec(description="Journal issue"),
+    "issn": ColumnSpec(description="Journal ISSN (kept as a plain string)"),
+    "lang": ColumnSpec(description="Publication language"),
+    "page_number": ColumnSpec(description="Page number(s)"),
+    "pmc_id": ColumnSpec(description="PubMed Central id (PMC…), where assigned"),
+    "pub_date": ColumnSpec(description="Publication date"),
+    "pub_year": ColumnSpec(description="Publication year (Int64)"),
+}
+_PUBLICATION_METADATA_RENAME = {
+    "PMID": "pubmed_id", "PUB_TITLE": "pub_title", "AUTHOR_LIST": "author_list", "AFFILIATION": "affiliation",
+    "COUNTRY": "country", "JOURNAL_TITLE": "journal_title", "JOURNAL_TITLE_ABBR": "journal_title_abbr",
+    "JOURNAL_VOLUME": "journal_volume", "JOURNAL_ISSUE": "journal_issue", "ISSN": "issn", "LANG": "lang",
+    "PAGE_NUMBER": "page_number", "PMC_ID": "pmc_id", "PUB_DATE": "pub_date", "PUB_YEAR": "pub_year",
+}
+
 # Per-table: (schema, rename map, file glob — yearly zips — or a single filename).
 _PROJECTS = ("projects", PROJECTS_SCHEMA, _PROJECTS_RENAME, "RePORTER_PRJ_C_FY*.zip")
 _ABSTRACTS = ("project_abstracts", ABSTRACTS_SCHEMA, _ABSTRACTS_RENAME, "RePORTER_PRJABS_C_FY*.zip")
 _PUBLICATIONS = ("project_publications", PUBLICATIONS_SCHEMA, _PUBLICATIONS_RENAME, "RePORTER_PUBLNK_C_FY*.zip")
+_PUBLICATION_METADATA = ("publications", PUBLICATION_METADATA_SCHEMA, _PUBLICATION_METADATA_RENAME, "RePORTER_PUB_C_FY*.zip")
 _PATENTS = ("patents", PATENTS_SCHEMA, _PATENTS_RENAME, "Patents.csv")
 _CLINICAL = ("clinical_studies", CLINICAL_STUDIES_SCHEMA, _CLINICAL_RENAME, "ClinicalStudies.csv")
 
-_INT_COLS = {"projects": ["fy", "support_year"]}
+_INT_COLS = {"projects": ["fy", "support_year"], "publications": ["pub_year"]}
 _FLOAT_COLS = {"projects": ["direct_cost_amt", "indirect_cost_amt", "total_cost", "total_cost_sub_project"]}
+# Tables whose concatenated shards are deduplicated on a key in load.
+_DEDUP_KEY = {"publications": "pubmed_id"}
 
 
 @register
 class NihExporter(DatasetPipeline):
     name = "nih_exporter"
 
-    _TABLES = [_PROJECTS, _ABSTRACTS, _PUBLICATIONS, _PATENTS, _CLINICAL]
+    _TABLES = [_PROJECTS, _ABSTRACTS, _PUBLICATIONS, _PUBLICATION_METADATA, _PATENTS, _CLINICAL]
 
     def _read_csv(self, source: Path) -> pd.DataFrame:
         """Read an ExPORTER CSV (plain or the single CSV inside a yearly zip), latin-1."""
@@ -196,6 +227,8 @@ class NihExporter(DatasetPipeline):
             shards = sorted(shard_dir.glob("*.parquet"))
             df = pd.concat([self.load_parquet(s) for s in shards], ignore_index=True)
             df = df[list(schema)]
+            if stem in _DEDUP_KEY:  # same publication is listed under each linked FY
+                df = df.drop_duplicates(subset=_DEDUP_KEY[stem], ignore_index=True)
             for col in _INT_COLS.get(stem, []):
                 df[col] = df[col].astype("Int64")
             for col in _FLOAT_COLS.get(stem, []):

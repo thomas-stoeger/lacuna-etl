@@ -211,11 +211,12 @@ downstream repos can join across datasets safely. Canonical forms:
 - **NSF award ID** — alphanumeric (`[0-9A-Za-z]+`): most are numeric grant ids but
   NSF also issues contract-style ids (`49100421C0035`). An opaque agency key; keys
   the `nsf_awards` tables. Enforced in pandas.
-- **NIH core project number** — the grant's stable activity+IC+serial id; an
-  opaque key with no enforceable canonical character set (historical records carry
-  spaces, asterisks, slashes, underscores), so no pattern is imposed
-  (presence-validated only where required). Links `nih_exporter` projects,
-  publications, patents, and clinical studies.
+- **NIH core project number** — the grant's stable activity+IC+serial id and a main
+  join key across the `nih_exporter` tables. Mostly upper-alphanumeric, but
+  historical/special records carry spaces, ampersands, asterisks, and underscores,
+  so the pattern is anchored to the character set observed across the whole release
+  (`[0-9A-Z][0-9A-Z &*_-]*`). Links `nih_exporter` projects, publications, patents,
+  and clinical studies.
 - **NIH application ID, BioGRID ID** — positive `Int64`; dataset-internal keys
   (the NIH project-year row; the BioGRID interaction and interactor ids) not
   cross-referenced by other datasets, validated to the positive-integer contract.
@@ -768,8 +769,11 @@ concatenates the shards per table. The `projects` grain key is `application_id`
   (robust across decades; not exploded).
 - `project_abstracts` — one row per `application_id`, with `abstract_text`.
 - `project_publications` — the project↔PMID linkage (`PUBLNK`): `pubmed_id`
-  (`PubmedId`) × `core_project_num`. The publication *metadata* file
-  (`RePORTER_PUB_C`) is intentionally not ingested (covered by `ncbi_pubmed`/`icite`).
+  (`PubmedId`) × `core_project_num`.
+- `publications` — the publication metadata (`PUB_C`), one row per `pubmed_id`
+  (`PubmedId`, deduplicated across fiscal-year files since a publication is re-listed
+  under each linked FY): title, author list, affiliation, journal title/abbr/volume/
+  issue, `issn`, `pmc_id`, `pub_date`, `pub_year` (`Int64`).
 - `patents` — `patent_id`, `patent_title`, `core_project_num`, `patent_org_name`.
 - `clinical_studies` — `core_project_num`, `nct_id` (ClinicalTrials.gov id, a plain
   string), `study`, `study_status`.
