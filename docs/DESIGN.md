@@ -183,6 +183,10 @@ downstream repos can join across datasets safely. Canonical forms:
   *homologue* gene IDs are not all Ensembl (worm/fly use `WBGene`/`FBgn`), so those
   columns stay plain strings. The pattern is enforced in pandas as well as polars
   (the `proteinatlas` pipeline is pandas-backed).
+- **Ensembl Transcript / Protein ID** — `ENS[A-Z]*T\d+` / `ENS[A-Z]*P\d+`
+  (unversioned; the species infix varies like the gene id — `ENST`/`ENSMUST`/…,
+  `ENSP`/`ENSMUSP`/…). Key `ensembl_gtf` transcripts and CDS features; the
+  `.<version>` is carried in a separate column.
 - **ChEMBL ID** — `CHEMBL\d+`; Open Targets' canonical drug-molecule identifier.
 - **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix
   (some sources, e.g. Ensembl's TSV dumps, drop the version): the curated/predicted
@@ -699,6 +703,27 @@ summary in long form, plus a `samples` catalogue of the per-sample matrices' col
 - `samples` — one row per `(matrix, sample_id)` cataloguing the `gene_reads` and
   `gene_tpm` per-sample columns (`matrix` `allowed_values` ∈ {`gene_reads`,
   `gene_tpm`}).
+
+Ensembl GTF (`ensembl_gtf`, polars; one gzipped GTF per species — human, mouse,
+rat, zebrafish, chicken — release 116). `extract` parses each species GTF (the
+9 columns plus the `key "value";` attribute string) into per-species shards
+(restartable via per-species done-markers); `load` concatenates per table. Three
+tables split the annotation's natural grains, all carrying `species` and genomic
+coordinates (`seqname`, `start`/`end` `Int64`, `strand`):
+
+- `genes` — one row per gene feature (~263k), keyed by `gene_id` (`EnsemblGeneId`):
+  `gene_version` (`Int64`), `gene_source`, `gene_biotype`, `gene_name`.
+- `transcripts` — one row per transcript feature (~1.36M), keyed by `transcript_id`
+  (`EnsemblTranscriptId`) with `gene_id` (`EnsemblGeneId`): `transcript_version`,
+  source/biotype/name, `gene_name`, and the `is_canonical` / `is_mane_select`
+  booleans (from the `Ensembl_canonical` / `MANE_Select` tags).
+- `features` — one row per sub-feature line (~22.3M; `feature_type`
+  `allowed_values` ∈ {exon, CDS, five_prime_utr, three_prime_utr, start_codon,
+  stop_codon, Selenocysteine}): `score` (`Float64`), `frame` (`Int64`), `gene_id`
+  (`EnsemblGeneId`), `transcript_id` (`EnsemblTranscriptId`), `exon_id` (plain
+  string), `exon_number` (`Int64`), `protein_id` (`EnsemblProteinId`, on CDS rows),
+  `protein_version`. The unversioned id is typed; the source `*_version` integer is
+  kept in its own column.
 
 InterPro (`interpro`, pandas for the small reference files + polars streaming for
 the protein matches; release 108.0). The grain key is the InterPro entry accession

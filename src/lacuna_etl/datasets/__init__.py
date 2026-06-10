@@ -42,5 +42,6 @@ from lacuna_etl.datasets import nih_exporter as _nih_exporter  # noqa: F401
 from lacuna_etl.datasets import nsf_awards as _nsf_awards  # noqa: F401
 from lacuna_etl.datasets import intact as _intact  # noqa: F401
 from lacuna_etl.datasets import interpro as _interpro  # noqa: F401
+from lacuna_etl.datasets import ensembl_gtf as _ensembl_gtf  # noqa: F401
 
 __all__ = ["REGISTRY", "register"]

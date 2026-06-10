@@ -687,6 +687,26 @@ class EnsemblGeneId(Identifier):
             )
 
 
+class EnsemblTranscriptId(Identifier):
+    """Ensembl transcript ID, e.g. 'ENST00000641871' (human) or 'ENSMUST…' (mouse).
+
+    Like ``EnsemblGeneId``, the species infix varies, so the pattern is permissive
+    across species (``ENST``/``ENSMUST``/``ENSDART``/``ENSGALT``/``ENSRNOT``/…). The
+    unversioned form; the ``.<version>`` is carried in a separate column where kept.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"ENS[A-Z]*T\d+"
+
+
+class EnsemblProteinId(Identifier):
+    """Ensembl protein (translation) ID, e.g. 'ENSP00000489835' (human) or 'ENSMUSP…'.
+
+    Species infix varies (``ENSP``/``ENSMUSP``/``ENSDARP``/…); unversioned form.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"ENS[A-Z]*P\d+"
+
+
 class ChemblId(Identifier):
     """ChEMBL molecule ID, e.g. 'CHEMBL25'. Open Targets' canonical drug identifier."""
     dtype = pd.StringDtype()
