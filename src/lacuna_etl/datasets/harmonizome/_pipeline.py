@@ -49,7 +49,7 @@ from lacuna_etl.datasets.harmonizome._kg import (
     read_nodes as kg_read_nodes,
 )
 from lacuna_etl.datasets.harmonizome._namespaces import normalize_target_id, resolve_namespace
-from lacuna_etl.datasets.ncbi_gene_history import update_entrez_ids  # noqa: F401  (kept for caller compat)
+from lacuna_etl.datasets.ncbi_gene_history import update_entrez_ids
 from lacuna_etl.datasets.registry import register
 
 EDGES_SCHEMA = {
@@ -121,28 +121,6 @@ def _coalesce_threshold(s: pd.Series) -> pd.Series:
 
 def _coalesce_float(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
-
-
-def _safe_update_entrez(s: pd.Series) -> tuple[pd.Series, int]:
-    """Apply ncbi_gene_history mapping; DROP rather than raise on
-    discontinued-without-replacement IDs.
-    """
-    from lacuna_etl.config import get_output_root
-
-    hist = pq.read_table(
-        str(get_output_root() / "ncbi_gene_history" / "gene_history.parquet"),
-        columns=["gene_id", "discontinued_gene_id"],
-    ).to_pandas()
-    mapping = hist.dropna(subset=["gene_id"]).set_index("discontinued_gene_id")["gene_id"]
-    dropped_set = set(hist.loc[hist["gene_id"].isna(), "discontinued_gene_id"])
-
-    drop_mask = s.isin(dropped_set)
-    n_dropped = int(drop_mask.sum())
-    s = s[~drop_mask].copy()
-    in_mapping = s.isin(mapping.index)
-    if in_mapping.any():
-        s[in_mapping] = s[in_mapping].map(mapping)
-    return s, n_dropped
 
 
 def _extract_kg(tgz: Path) -> tuple[str, pd.DataFrame | None]:
@@ -337,10 +315,10 @@ class Harmonizome(DatasetPipeline):
             edges["entrez_id"] = pd.to_numeric(edges["entrez_id"], errors="coerce").astype("Int64")
             edges = edges.dropna(subset=["entrez_id"])
 
-            updated, n_dropped = _safe_update_entrez(edges["entrez_id"])
+            updated = update_entrez_ids(edges["entrez_id"], on_discontinued="drop")
+            total_dropped += len(edges) - len(updated)
             edges = edges.loc[updated.index].copy()
             edges["entrez_id"] = updated.values
-            total_dropped += n_dropped
 
             ns_resolved = edges["target_namespace"].astype(str).map(resolve_namespace)
             edges["target_namespace"] = ns_resolved
@@ -363,7 +341,7 @@ class Harmonizome(DatasetPipeline):
                     genes["entrez_id"] = pd.to_numeric(genes["entrez_id"], errors="coerce").astype("Int64")
                     genes = genes.dropna(subset=["entrez_id"])
                     if len(genes):
-                        upd, _ = _safe_update_entrez(genes["entrez_id"])
+                        upd = update_entrez_ids(genes["entrez_id"], on_discontinued="drop")
                         genes = genes.loc[upd.index].copy()
                         genes["entrez_id"] = upd.values
                         genes = genes.drop_duplicates(subset=["entrez_id"]).reset_index(drop=True)
