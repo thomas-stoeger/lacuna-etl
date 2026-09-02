@@ -362,9 +362,14 @@ Funding is linked from both ends, and the two sides are not redundant:
   left to a join because ~1.7% of award IDs cited on works are absent from the
   awards entity dump; without it those links would resolve to no funder.
 - `awards_funded_outputs` — one row per `(award_id, work_id)`, from the award
-  side's `funded_outputs` list. Independently asserted by OpenAlex and not a
-  transpose of `works_awards`: coverage differs in both directions, so consumers
-  wanting maximum recall should union the two.
+  side's `funded_outputs` list. Measured against the 2026-03-31 snapshot, its
+  32,514,594 pairs are a strict *subset* of `works_awards`' 60,705,379 — every
+  award-side pair also appears on the work side, and the work side adds 28.2M
+  more. So `works_awards` is the table to use for recall; unioning the two gains
+  nothing. `awards_funded_outputs` is retained as the award-side view (cheaper to
+  scan when starting from an award, and it preserves OpenAlex's own assertion),
+  not as extra coverage. Re-check the subset relation when the snapshot changes;
+  it is a property of the data, not a guarantee of the source.
 
 `awards_investigators` is name-based, not ID-based: OpenAlex asserts no author
 ID on award investigators, only given/family name, a mostly-null `orcid`, and a
