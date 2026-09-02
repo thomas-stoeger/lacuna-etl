@@ -11,8 +11,30 @@ Concurrency:
   - workers per-pipeline:    OPENALEX_WORKERS    (default: 2)
   - records per batch:       OPENALEX_BATCH_SIZE (default: 50000)
 
+Backfilling new tables:
+  - restrict a run to a subset:  OPENALEX_ONLY_TABLES=works_funders,works_awards
+
+    When a code change adds a table to an entity that has already been run, a
+    full re-run would rewrite tens of GB of unchanged output just to gain it.
+    With this set, transform and per-batch verification still run over the whole
+    record (so the checks see every table), but only the named tables are
+    written, and the restart check keys off the first *named* table instead of
+    `first_table` — so list the densest one first. Sparse link tables emit no
+    shard for a gz file that yields no rows, so such files are re-read on a
+    subsequent restart; that repeats work but cannot produce wrong output.
+
 Output layout:
   <output_root>/<dataset_name>/<table>/<date>__part_NNNN__batch_NNN.parquet
+  <output_root>/<dataset_name>/_done/<selection>/<date>__part_NNNN
+
+Restartability:
+  A gz file yields several batches, so the presence of its batch_000 shard does
+  not mean the file finished — an interrupted run would leave later batches
+  unwritten and be skipped on restart, silently truncating the table. A file is
+  therefore marked done only after all of its batches are written, and the
+  marker is what the restart check consults. Markers are namespaced by the table
+  selection, so a filtered backfill and a full run do not read each other's.
+  Outputs produced before markers existed fall back to the batch_000 check.
 """
 
 import importlib
@@ -33,6 +55,17 @@ _DEFAULT_WORKERS = 2
 _DEFAULT_BATCH_SIZE = 50_000
 
 
+def _only_tables() -> tuple[str, ...] | None:
+    """Tables this run is restricted to, or None when writing every table.
+
+    Order is preserved: the first name doubles as the restart key, so put a
+    densely populated table first when backfilling alongside a sparse one.
+    """
+    raw = os.environ.get("OPENALEX_ONLY_TABLES", "")
+    selected = tuple(t.strip() for t in raw.split(",") if t.strip())
+    return selected or None
+
+
 def _cleaned_expr(col: str, dtype):
     """Polars expression that strips whitespace and maps empty-string -> null for string columns;
     for non-string columns, returns the column unchanged."""
@@ -41,6 +74,18 @@ def _cleaned_expr(col: str, dtype):
         stripped = pl.col(col).str.strip_chars()
         return pl.when(stripped == "").then(None).otherwise(stripped)
     return pl.col(col)
+
+
+def _selection_tag() -> str:
+    """Directory name identifying which table selection a done-marker belongs to."""
+    only = _only_tables()
+    return "all" if only is None else "+".join(sorted(only))
+
+
+def _done_marker(output_dir: Path, gz_path: Path) -> Path:
+    date_part = gz_path.parent.name.removeprefix("updated_date=")
+    stem = gz_path.name.removesuffix(".gz")
+    return output_dir / "_done" / _selection_tag() / f"{date_part}__{stem}"
 
 
 def _shard_name(gz_path: Path, batch_idx: int) -> str:
@@ -65,6 +110,7 @@ def _process_file(args: tuple[str, str, str]) -> tuple[str, int, int]:
     verify_batch = getattr(mod, "verify_batch", None)
     batch_size = int(os.environ.get("OPENALEX_BATCH_SIZE", _DEFAULT_BATCH_SIZE))
 
+    only = _only_tables()
     records_written = 0
     batches_written = 0
     for batch_idx, batch in enumerate(iter_batches(gz_path, batch_size)):
@@ -74,6 +120,8 @@ def _process_file(args: tuple[str, str, str]) -> tuple[str, int, int]:
 
         name = _shard_name(gz_path, batch_idx)
         for table_name, df in tables.items():
+            if only is not None and table_name not in only:
+                continue
             if df.is_empty():
                 continue
             out_dir = output_dir / table_name
@@ -82,6 +130,10 @@ def _process_file(args: tuple[str, str, str]) -> tuple[str, int, int]:
 
         records_written += len(batch)
         batches_written += 1
+
+    marker = _done_marker(output_dir, gz_path)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
 
     return gz_path_str, records_written, batches_written
 
@@ -117,8 +169,28 @@ class OpenAlexEntityPipeline(DatasetPipeline):
             raise FileNotFoundError(f"Entity directory not found: {entity_dir}")
         return entity_dir
 
+    def _restart_table(self) -> str:
+        """Table whose shards signal that a gz file has already been processed."""
+        only = _only_tables()
+        if only is None:
+            return self.first_table
+        if unknown := [t for t in only if t not in self.tables_doc]:
+            raise ValueError(
+                f"[{self.name}] OPENALEX_ONLY_TABLES names unknown table(s) "
+                f"{', '.join(unknown)}; available: {', '.join(self.tables_doc)}"
+            )
+        return only[0]
+
     def _shard_done(self, gz_path: Path) -> bool:
-        return (self.output_path() / self.first_table / _shard_name(gz_path, 0)).exists()
+        out_dir = self.output_path()
+        if _done_marker(out_dir, gz_path).exists():
+            return True
+        # Fallback for outputs written before done-markers existed: those runs
+        # completed, so a batch_000 shard does mean the file finished.
+        marker_root = out_dir / "_done" / _selection_tag()
+        if marker_root.exists():
+            return False
+        return (out_dir / self._restart_table() / _shard_name(gz_path, 0)).exists()
 
     def extract(self) -> None:
         from lacuna_etl.datasets.openalex._extract import iter_entity_files
@@ -138,6 +210,9 @@ class OpenAlexEntityPipeline(DatasetPipeline):
 
         print(f"[{self.name}] {len(all_files)} gz files, {len(pending)} to process")
         print(f"[{self.name}] workers={workers}, batch_size={batch_size:,}")
+        if (only := _only_tables()) is not None:
+            print(f"[{self.name}] writing only: {', '.join(only)} "
+                  f"(restart key: {self._restart_table()})")
 
         if not pending:
             return
@@ -180,7 +255,10 @@ class OpenAlexEntityPipeline(DatasetPipeline):
         if not self.tables_doc:
             return
 
+        only = _only_tables()
         for table_name, doc in self.tables_doc.items():
+            if only is not None and table_name not in only:
+                continue
             table_dir = out_dir / table_name
             shards = sorted(table_dir.glob("*.parquet")) if table_dir.exists() else []
             if not shards:
