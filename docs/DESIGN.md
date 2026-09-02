@@ -173,6 +173,11 @@ downstream repos can join across datasets safely. Canonical forms:
   pandas-backed).
 - **ROR ID** — canonical full URL `https://ror.org/...` (the registry's own
   canonical form).
+- **Crossref Funder Registry DOI** — bare `10.13039/<n>`, the identifier Crossref
+  assigns a funding *organization*. Typed separately from `Doi` rather than
+  reusing it: it is not article-level, so it must never be joined against a
+  work's `doi`, and every entry sits on the single `10.13039` registrant.
+  Carried by `openalex_funders.funders.crossref_funder_doi`.
 - **Wikidata ID** — bare `Q\d+`, URL forms stripped.
 - **Country code** — ISO 3166-1 alpha-2 (and alpha-3 where noted).
 - **OpenAlex IDs** — short form (`W2741809807`, `A...`, `I...`, etc.), URL prefix
@@ -334,11 +339,42 @@ article-level with a `doi_versioned` sibling; `article_ids` is left as the
 verbatim source id list (its plain-string `value` is not version-split).
 
 OpenAlex (21 datasets, streaming): `openalex_works` produces `works`,
-`works_authorships`, `works_topics`, and `works_refs`; the other 20 entities
-(`openalex_authors`, `openalex_sources`, `openalex_institutions`, the topic
+`works_authorships`, `works_topics`, `works_refs`, `works_funders`, and
+`works_awards`; `openalex_awards` produces `awards`, `awards_investigators`, and
+`awards_funded_outputs`; the other 19 entities (`openalex_authors`,
+`openalex_sources`, `openalex_institutions`, `openalex_funders`, the topic
 hierarchy, and the controlled-vocabulary lookups) each produce a single
 similarly named table. `works.doi` is article-level with a `doi_versioned`
 sibling.
+
+`funders` carries two external identifiers alongside the OpenAlex one:
+`ror` (canonical ROR URL, on ~55% of funders — join the `ror` dataset) and
+`crossref_funder_doi` (present on every funder in the current snapshot).
+
+Funding is linked from both ends, and the two sides are not redundant:
+
+- `works_funders` — one row per `(work_id, funder_id)`. The funder credited on
+  the work, whether or not a specific award was identified; join
+  `openalex_funders.funders`. This is the table to use for "which works did
+  funder X fund".
+- `works_awards` — one row per `(work_id, award_id)`, plus the `funder_id` the
+  work record asserts for that award. The funder is carried here rather than
+  left to a join because ~1.7% of award IDs cited on works are absent from the
+  awards entity dump; without it those links would resolve to no funder.
+- `awards_funded_outputs` — one row per `(award_id, work_id)`, from the award
+  side's `funded_outputs` list. Independently asserted by OpenAlex and not a
+  transpose of `works_awards`: coverage differs in both directions, so consumers
+  wanting maximum recall should union the two.
+
+`awards_investigators` is name-based, not ID-based: OpenAlex asserts no author
+ID on award investigators, only given/family name, a mostly-null `orcid`, and a
+free-text affiliation whose `affiliation_country` is a country *name*, not an
+ISO code. Resolving an investigator to an `openalex_authors` row is a consumer-
+side matching problem this repo does not attempt.
+
+Adding a table to an entity that has already been run does not require
+rewriting its existing output: set `OPENALEX_ONLY_TABLES` to the new table names
+and the run writes only those, keying its restart check off the first of them.
 
 PubTator3 (`ncbi_pubtator3`, streaming): the BioC-XML archives carry NCBI's
 text-mined bio-entity annotations and concept-concept relations over PubMed and

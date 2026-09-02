@@ -59,6 +59,7 @@ GRAINS = [
     ("ror", "organizations", ["ror_id"]),
     ("nih_exporter", "projects", ["application_id"]),
     ("nsf_awards", "awards", ["award_id"]),
+    ("openalex_awards", "awards", ["award_id"]),
 ]
 
 

@@ -16,7 +16,7 @@ import polars as pl
 
 from lacuna_etl.core import identifiers as ids
 from lacuna_etl.core.identifiers import (
-    ChemblId, Doi, EnsemblGeneId, EnsemblTranscriptId, GoId, Identifier, IssnL,
+    ChemblId, CrossrefFunderDoi, Doi, EnsemblGeneId, EnsemblTranscriptId, GoId, Identifier, IssnL,
     MeshDescriptorId, MeshQualifierId, NlmUniqueId, NumericIdentifier, Orcid,
     PubmedId, ReactomePathwayId, UniprotAccession,
 )
@@ -57,6 +57,8 @@ class TestIdentifierPatterns(unittest.TestCase):
         MeshDescriptorId: (["D000445"], ["Q000378", "000445"]),
         MeshQualifierId: (["Q000378"], ["D000445"]),
         UniprotAccession: (["P48347", "A0A0B4J2F2"], ["P48347-2", "p48347", "PETER"]),
+        CrossrefFunderDoi: (["10.13039/100000002"], ["10.1038/nature12373", "100000002",
+                                                     "https://doi.org/10.13039/100000002"]),
     }
 
     def test_format_examples(self):

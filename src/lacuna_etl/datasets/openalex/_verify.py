@@ -75,12 +75,18 @@ def verify_works_batch(
     if wrong_prefix > 0:
         errors.append(f"{wrong_prefix} work_ids without 'W' prefix")
 
-    auth = tables["works_authorships"]
-    if not auth.is_empty():
-        work_ids = set(works["work_id"].to_list())
-        orphans = auth.filter(~pl.col("work_id").is_in(work_ids)).height
+    work_ids = set(works["work_id"].to_list())
+    for table_name, label in (
+        ("works_authorships", "authorships"),
+        ("works_funders",     "work-funder links"),
+        ("works_awards",      "work-award links"),
+    ):
+        child = tables[table_name]
+        if child.is_empty():
+            continue
+        orphans = child.filter(~pl.col("work_id").is_in(work_ids)).height
         if orphans > 0:
-            errors.append(f"{orphans} authorships referencing unknown work_id")
+            errors.append(f"{orphans} {label} referencing unknown work_id")
 
     if errors:
         raise ValueError(
