@@ -1,3 +1,4 @@
+import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -50,6 +51,37 @@ class DatasetPipeline(ABC):
         data = {col: spec.yaml_entry() for col, spec in schema.items()}
         path = self.output_path() / f"{stem}.yml"
         path.write_text(yaml.dump(data, sort_keys=False, allow_unicode=True))
+
+    def expected_schemas(self) -> dict[str, dict[str, ColumnSpec]]:
+        """Return ``{table_name: {column: ColumnSpec}}`` for every sidecar this dataset emits.
+
+        This is the single introspectable source of truth used by ``etl check`` (sidecar
+        drift detection) and the cross-dataset identifier audit, derived without running a
+        pipeline. The default auto-detects the repo's schema-declaration conventions:
+
+          * a class ``tables_doc`` mapping (Open Targets product pipelines);
+          * a module-level ``TABLES_DOC`` mapping (OpenAlex entities; PubMed/ORCID/PubTator3
+            import it into their pipeline module's namespace);
+          * a module-level or class ``_TABLES`` (a mapping, or a sequence of
+            ``(table, schema)`` pairs).
+
+        Datasets that build tables dynamically, hard-code a stem, or expose nothing
+        introspectable override this method.
+        """
+        td = getattr(type(self), "tables_doc", None)
+        if td:
+            return {table: dict(cols) for table, cols in td.items()}
+        mod = sys.modules.get(type(self).__module__)
+        for source in (getattr(mod, "TABLES_DOC", None), getattr(mod, "_TABLES", None),
+                       getattr(type(self), "_TABLES", None)):
+            if not source:
+                continue
+            pairs = source.items() if hasattr(source, "items") else source
+            return {table: dict(schema) for table, schema in pairs}
+        raise NotImplementedError(
+            f"{self.name}: cannot introspect output schemas; override expected_schemas() "
+            f"or declare a _TABLES / TABLES_DOC mapping"
+        )
 
     @abstractmethod
     def extract(self) -> None:

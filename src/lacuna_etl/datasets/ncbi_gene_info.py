@@ -48,6 +48,7 @@ _RENAME = {
 @register
 class NcbiGeneInfo(DatasetPipeline):
     name = "ncbi_gene_info"
+    _TABLES = [("gene_info", SCHEMA)]
     depends_on = ["ncbi_gene_history"]
 
     def extract(self) -> None:

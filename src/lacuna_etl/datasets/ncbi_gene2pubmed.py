@@ -16,6 +16,7 @@ SCHEMA = {
 @register
 class NcbiGene2Pubmed(DatasetPipeline):
     name = "ncbi_gene2pubmed"
+    _TABLES = [("gene2pubmed", SCHEMA)]
     depends_on = ["ncbi_gene_history"]
 
     def extract(self) -> None:

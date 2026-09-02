@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import Doi, PubmedId
+from lacuna_etl.core.identifiers import Doi, DoiVersioned, PubmedId
 from lacuna_etl.core.schema import ColumnSpec
 
 
@@ -65,7 +65,8 @@ TABLES_DOC: dict[str, dict[str, ColumnSpec]] = {
     "articles": {
         "pmid":          ColumnSpec(identifier=PubmedId, required=True, description="PubMed identifier (the BioC document id)"),
         "pmc_id":        ColumnSpec(description="PubMed Central ID from article-id_pmc, e.g. PMC1234567; null for abstract-only records"),
-        "doi":           ColumnSpec(identifier=Doi, description="DOI from the article-id_doi infon (URL prefix stripped); null when PubTator carries no clean DOI key, e.g. most abstract-only records"),
+        "doi":           ColumnSpec(identifier=Doi, description="DOI from the article-id_doi infon (URL prefix stripped, article-level; any publisher version suffix is split into doi_versioned); null when PubTator carries no clean DOI key, e.g. most abstract-only records"),
+        "doi_versioned": ColumnSpec(identifier=DoiVersioned, description="Original versioned DOI when the publisher appends an article version (e.g. F1000 '.N', Research Square '/vN'); null otherwise"),
         "year":          ColumnSpec(description="Publication year from the front/title passage"),
         "volume":        ColumnSpec(description="Journal volume from the front/title passage"),
         "issue":         ColumnSpec(description="Journal issue from the front/title passage"),

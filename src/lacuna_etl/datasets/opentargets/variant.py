@@ -9,7 +9,7 @@
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import EnsemblGeneId
+from lacuna_etl.core.identifiers import EnsemblGeneId, EnsemblTranscriptId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.opentargets._base import OpenTargetsProductPipeline
 from lacuna_etl.datasets.opentargets._helpers import explode_struct_list
@@ -94,7 +94,7 @@ TABLES_DOC = {
     },
     "variants_transcript_consequences": {
         "variant_id":                         ColumnSpec(required=True, description="Open Targets variant ID"),
-        "transcript_id":                      ColumnSpec(description="Ensembl transcript ID"),
+        "transcript_id":                      ColumnSpec(identifier=EnsemblTranscriptId, description="Ensembl transcript ID"),
         "target_id":                          ColumnSpec(identifier=EnsemblGeneId, description="Ensembl gene ID of the transcript"),
         "approved_symbol":                    ColumnSpec(description="Approved gene symbol"),
         "biotype":                            ColumnSpec(description="Transcript biotype"),

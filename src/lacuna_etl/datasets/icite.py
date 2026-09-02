@@ -6,7 +6,7 @@ import pyarrow as pa
 import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 
-from lacuna_etl.core.identifiers import Doi, PubmedId
+from lacuna_etl.core.identifiers import Doi, DoiVersioned, PubmedId, split_doi_version_pandas
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.registry import register
@@ -31,7 +31,8 @@ _BOOL_MAP = {"True": True, "False": False}
 
 SCHEMA = {
     "pmid": ColumnSpec(identifier=PubmedId, description="PubMed Identifier assigned by the National Library of Medicine"),
-    "doi": ColumnSpec(identifier=Doi, description="Digital Object Identifier, if available"),
+    "doi": ColumnSpec(identifier=Doi, description="Digital Object Identifier (article-level; any publisher version suffix is split into doi_versioned), if available"),
+    "doi_versioned": ColumnSpec(identifier=DoiVersioned, description="Original versioned DOI when the publisher appends an article version (e.g. F1000 '.N', Research Square '/vN'); null otherwise"),
     "title": ColumnSpec(description="Title of the article"),
     "year": ColumnSpec(description="Year the article was published"),
     "journal": ColumnSpec(description="Journal name (NLM abbreviation, without periods)"),
@@ -62,6 +63,7 @@ OPEN_CITATION_SCHEMA = {
 @register
 class ICite(DatasetPipeline):
     name = "icite"
+    _TABLES = [("icite", SCHEMA), ("open_citation_collection", OPEN_CITATION_SCHEMA)]
 
     def extract(self) -> None:
         self._extract_metadata()
@@ -87,7 +89,11 @@ class ICite(DatasetPipeline):
         PubmedId.validate(df["pmid"])
 
         df["doi"] = Doi.cast(df["doi"])
+        # Split publisher-versioned DOIs (F1000 '.N', Research Square '/vN', ...):
+        # doi keeps the article-level base, doi_versioned keeps the full versioned form.
+        df["doi"], df["doi_versioned"] = split_doi_version_pandas(df["doi"])
         Doi.validate(df["doi"])
+        DoiVersioned.validate(df["doi_versioned"])
 
         for col in _INT_COLS:
             df[col] = pd.to_numeric(df[col], errors="raise").astype(pd.Int64Dtype())
@@ -107,7 +113,9 @@ class ICite(DatasetPipeline):
             utc=True,
         )
 
-        self.save_parquet(df, self.intermediate_path() / "icite.parquet")
+        # Distinct from the output's icite.parquet so the two never collide
+        # when intermediate_root == output_root.
+        self.save_parquet(df, self.intermediate_path() / "icite_metadata.parquet")
 
     def _extract_open_citation_collection(self) -> None:
         src = self.raw_path() / "open_citation_collection.zip"
@@ -123,7 +131,7 @@ class ICite(DatasetPipeline):
                     writer.write_batch(batch)
 
     def _transform_metadata(self) -> None:
-        df = self.load_parquet(self.intermediate_path() / "icite.parquet")
+        df = self.load_parquet(self.intermediate_path() / "icite_metadata.parquet")
 
         unexpected_cols = set(df.columns) - set(SCHEMA)
         if unexpected_cols:
@@ -159,5 +167,8 @@ class ICite(DatasetPipeline):
     def _load_open_citation_collection(self) -> None:
         src = self.intermediate_path() / "open_citation_collection.parquet"
         dst = self.output_path() / "open_citation_collection.parquet"
-        shutil.copyfile(src, dst)
+        # No-op when intermediate_root == output_root (src and dst are the same
+        # file); shutil.copyfile would otherwise raise SameFileError.
+        if src.resolve() != dst.resolve():
+            shutil.copyfile(src, dst)
         self.save_schema_yaml(OPEN_CITATION_SCHEMA, "open_citation_collection")

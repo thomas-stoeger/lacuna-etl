@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import Doi, Orcid, PubmedId
+from lacuna_etl.core.identifiers import (
+    Doi, DoiVersioned, MeshDescriptorId, MeshQualifierId, NlmUniqueId, Orcid, PubmedId,
+)
 from lacuna_etl.core.schema import ColumnSpec
 
 
@@ -146,11 +148,12 @@ TABLES_DOC: dict[str, dict[str, ColumnSpec]] = {
         "issn":               ColumnSpec(description="ISSN from <Journal>"),
         "issn_type":          ColumnSpec(description="ISSN IssnType (Print or Electronic)"),
         "issn_linking":       ColumnSpec(description="Linking ISSN from MedlineJournalInfo"),
-        "nlm_unique_id":      ColumnSpec(description="NLM unique ID for the journal"),
+        "nlm_unique_id":      ColumnSpec(identifier=NlmUniqueId, description="NLM unique ID for the journal"),
         "medline_ta":         ColumnSpec(description="MedlineTA abbreviation"),
         "country":            ColumnSpec(description="Country from MedlineJournalInfo"),
         "language":           ColumnSpec(description="Comma-separated ISO 639-2 language codes"),
-        "doi":                ColumnSpec(identifier=Doi, description="DOI (URL prefix stripped), preferring ELocationID then ArticleIdList"),
+        "doi":                ColumnSpec(identifier=Doi, description="DOI (URL prefix stripped, article-level; any publisher version suffix is split into doi_versioned), preferring ELocationID then ArticleIdList"),
+        "doi_versioned":      ColumnSpec(identifier=DoiVersioned, description="Original versioned DOI when the publisher appends an article version (e.g. F1000 '.N', Research Square '/vN'); null otherwise"),
         "pmc_id":             ColumnSpec(description="PubMed Central ID, e.g. PMC1234567"),
         "pii":                ColumnSpec(description="Publisher Item Identifier from ELocationID"),
         "citation_status":    ColumnSpec(description="MedlineCitation@Status: e.g. MEDLINE, PubMed-not-MEDLINE, In-Process, Publisher"),
@@ -178,10 +181,10 @@ TABLES_DOC: dict[str, dict[str, ColumnSpec]] = {
     },
     "mesh_headings": {
         "pmid":             ColumnSpec(identifier=PubmedId, required=True, description="PubMed identifier of the article"),
-        "descriptor_ui":    ColumnSpec(description="MeSH descriptor UI, e.g. D000445"),
+        "descriptor_ui":    ColumnSpec(identifier=MeshDescriptorId, description="MeSH descriptor UI, e.g. D000445"),
         "descriptor_name":  ColumnSpec(description="MeSH descriptor name"),
         "descriptor_major": ColumnSpec(description="MajorTopicYN on the descriptor"),
-        "qualifier_ui":     ColumnSpec(description="MeSH qualifier UI, e.g. Q000378; null when the descriptor has no qualifier"),
+        "qualifier_ui":     ColumnSpec(identifier=MeshQualifierId, description="MeSH qualifier UI, e.g. Q000378; null when the descriptor has no qualifier"),
         "qualifier_name":   ColumnSpec(description="MeSH qualifier name"),
         "qualifier_major":  ColumnSpec(description="MajorTopicYN on the qualifier"),
     },

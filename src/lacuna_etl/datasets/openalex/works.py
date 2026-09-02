@@ -15,6 +15,7 @@ import polars as pl
 from lacuna_etl.core.identifiers import (
     OpenAlexAuthorId,
     Doi,
+    DoiVersioned,
     OpenAlexDomainId,
     OpenAlexFieldId,
     OpenAlexSourceId,
@@ -33,6 +34,7 @@ from lacuna_etl.datasets.registry import register
 _WORKS_SCHEMA = {
     "work_id":                           pl.String,
     "doi":                               pl.String,
+    "doi_versioned":                     pl.String,
     "title":                             pl.String,
     "publication_year":                  pl.Int64,
     "publication_date":                  pl.String,
@@ -104,9 +106,14 @@ def _works_row(r: dict) -> dict:
     cnpy = r.get("citation_normalized_percentile") or {}
     ids = r.get("ids") or {}
 
+    # Split publisher-versioned DOIs: doi keeps the article-level base,
+    # doi_versioned keeps the original versioned form (None when unversioned).
+    doi_base, doi_versioned = Doi.split_version(Doi.shorten(r.get("doi")))
+
     return {
         "work_id":              short_id(r.get("id")),
-        "doi":                  Doi.shorten(r.get("doi")),
+        "doi":                  doi_base,
+        "doi_versioned":        doi_versioned,
         "title":                r.get("title"),
         "publication_year":     r.get("publication_year"),
         "publication_date":     r.get("publication_date"),
@@ -210,7 +217,8 @@ def verify_batch(
 
 _WORKS_DOC = {
     "work_id":                        ColumnSpec(identifier=OpenAlexWorkId,     required=True, description="OpenAlex work identifier"),
-    "doi":                            ColumnSpec(identifier=Doi,        description="DOI with the URL prefix stripped"),
+    "doi":                            ColumnSpec(identifier=Doi,        description="DOI with the URL prefix stripped (article-level; any publisher version suffix is split into doi_versioned)"),
+    "doi_versioned":                  ColumnSpec(identifier=DoiVersioned, description="Original versioned DOI when the publisher appends an article version (e.g. F1000 '.N', Research Square '/vN'); null otherwise"),
     "title":                          ColumnSpec(description="Work title"),
     "publication_year":               ColumnSpec(description="Publication year"),
     "publication_date":               ColumnSpec(description="Publication date (ISO 8601)"),

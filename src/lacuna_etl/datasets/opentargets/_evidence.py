@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import ChemblId, EnsemblGeneId
+from lacuna_etl.core.identifiers import ChemblId, EnsemblGeneId, ReactomePathwayId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.opentargets._helpers import explode_struct_list
 
@@ -167,7 +167,7 @@ CHILDREN: dict[str, tuple[str, dict[str, tuple[str, object]], dict[str, ColumnSp
               "phenotype_label": _S(description="Human phenotype label")}),
     "pathways": ("pathways",
              {"id": ("pathway_id", None), "name": ("pathway_name", None)},
-             {"pathway_id": _S(description="Reactome pathway ID"),
+             {"pathway_id": _S(identifier=ReactomePathwayId, description="Reactome pathway ID"),
               "pathway_name": _S(description="Reactome pathway name")}),
 }
 

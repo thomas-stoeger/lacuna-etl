@@ -32,6 +32,7 @@ import polars as pl
 import yaml
 from tqdm import tqdm
 
+from lacuna_etl.core.identifiers import doi_base_expr, doi_versioned_expr
 from lacuna_etl.core.pipeline import DatasetPipeline
 from lacuna_etl.datasets.pubmed._parse import (
     iter_pubmed_records,
@@ -239,6 +240,13 @@ class NcbiPubmed(DatasetPipeline):
                 .str.replace_all(r"\s+", "")
                 .pipe(_keep_if_doi)
                 .alias("doi")
+            )
+            # Split publisher-versioned DOIs off the now-scrubbed doi: doi keeps
+            # the article-level base, doi_versioned keeps the original versioned
+            # form (null when unversioned).
+            .with_columns(
+                doi_base_expr("doi").alias("doi"),
+                doi_versioned_expr("doi").alias("doi_versioned"),
             )
         )
         articles_lf.sink_parquet(out_root / "articles.parquet", compression="snappy")
