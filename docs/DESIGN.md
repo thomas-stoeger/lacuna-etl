@@ -202,12 +202,6 @@ downstream repos can join across datasets safely. Canonical forms:
   transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS *genomic* RefSeq
   accessions interleave letters after the prefix (`NZ_MCBT01000001.1`) and so do
   *not* use this type — columns that can hold those stay plain strings.
-- **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix: the
-  curated/predicted transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS
-  *genomic* RefSeq accessions interleave letters after the prefix
-  (`NZ_MCBT01000001.1`) and so do *not* use this type — columns that can hold those
-  stay plain strings.
-
 - **MIM number** — OMIM's 6-digit catalog id (`\d{6}`), stored as a string (a
   fixed-width catalog key, not a quantity). Keys the `omim` mapping. Enforced in
   pandas.
@@ -457,8 +451,7 @@ children keyed by `nlm_unique_id`:
   recoverable from `indexing_coverage.ongoing` but materialized to "present" in
   the per-year explosion). `indexed_years` covers **all** indexing sources;
   consumers filter on `is_medline_indexing` for true MEDLINE indexing.
-  
-Open Targets (6 datasets, streaming per-Parquet-file; one registered pipeline per
+
 Open Targets (55 datasets, streaming per-Parquet-file; one registered pipeline per
 downloaded product, named `opentargets_<product>`): the Platform ships each
 product as a directory of Parquet part files, so the unit of work is one part file
@@ -1110,6 +1103,37 @@ through, into two tables joined on `cluster_id`:
   `knownness`, `num_proteins` / `num_species`, the best-known member
   (`best_known_protein_id`/`_gene`/`_name`), and `key_protein_ids` /
   `key_protein_xrefs`. `cluster_id` / `panther_group` are documented plain strings.
+
+Harmonizome (`harmonizome`, pandas; `depends_on = ncbi_gene_history`; the
+Ma'ayan-lab collection of processed gene–attribute datasets, one set of files per
+collection slug). The pipeline is deliberately conservative: it keeps only
+collections whose edges have a clearly identifiable *Entrez gene → non-gene
+attribute* shape. Gene–gene collections (PPI, kinase–substrate, TF–target), KGs
+whose gene side is in the target column, and collections with no explicit Entrez
+gene-id column are skipped, and the reason is recorded rather than guessed at. Per
+slug, the KG serialization is preferred when its orientation classifies as
+gene → attribute, falling back to the `gene_attribute_edges` file under the same
+test. Large tables are partitioned by collection
+(`<table>/collection_slug=<slug>/part.parquet`). Five tables:
+
+- `collections` — one row per processed collection: name, URL, description,
+  category, measurement/association free text, upstream `resource`, `source`
+  (`allowed_values` ∈ {`kg`, `gene_attributes`}), and edge/background counts.
+- `edges` — one row per gene → attribute edge: `source_entrez_id` (`NcbiGeneId`,
+  required, history-updated), `relation` (from the KG; null for KG-less
+  collections), `target_id` (CURIE-normalized for known ontologies such as
+  GO/HP/MP/CL/MONDO, else the raw string, so a documented plain string),
+  `target_namespace`, `target_label`, and the optional `standardized_value` /
+  binary `threshold`.
+- `genes` — the per-collection background gene universe: `entrez_id`
+  (`NcbiGeneId`), `symbol`, and a collection-specific `secondary_id` with its
+  `secondary_id_type`.
+- `attributes` — the per-collection background attribute universe
+  (`attribute_id`, `attribute_label`, `secondary_descriptor`).
+- `processing_report` — one row per discovered slug, processed or skipped:
+  `source` (`allowed_values` ∈ {`kg`, `gene_attributes`, `skipped`}),
+  `skip_reason`, and edge/gene/attribute counts plus the namespaces and relations
+  present. A `processing_report.tsv` mirror is written alongside for quick reading.
 
 ORCID — the ORCID Public Data File, summaries (`orcid`, streaming). The snapshot is a
 single ~43 GB `*_summaries.tar.gz` of ~20M tiny per-record XML files laid out as
