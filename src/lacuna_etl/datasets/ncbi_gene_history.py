@@ -24,12 +24,20 @@ SCHEMA = {
 }
 
 
-def update_entrez_ids(s: pd.Series) -> pd.Series:
+def update_entrez_ids(s: pd.Series, *, on_discontinued: str = "raise") -> pd.Series:
     """Replace discontinued Entrez Gene IDs with their current replacements.
 
-    Raises if any IDs are discontinued without a replacement (true deletion).
     Requires ncbi_gene_history to have been run first.
+
+    on_discontinued controls handling of IDs discontinued without a replacement
+    (true deletions):
+      - "raise" (default): raise ValueError listing offending IDs.
+      - "drop": drop those rows; the returned Series is shorter than the input.
+        Callers that need the drop count can compute len(before) - len(after).
     """
+    if on_discontinued not in ("raise", "drop"):
+        raise ValueError(f"unknown on_discontinued: {on_discontinued!r}")
+
     df = pq.read_table(
         str(get_output_root() / "ncbi_gene_history" / "gene_history.parquet"),
         columns=["gene_id", "discontinued_gene_id"],
@@ -38,9 +46,13 @@ def update_entrez_ids(s: pd.Series) -> pd.Series:
     mapping = df.dropna(subset=["gene_id"]).set_index("discontinued_gene_id")["gene_id"]
     discontinued_no_replacement = set(df.loc[df["gene_id"].isna(), "discontinued_gene_id"])
 
-    bad = s[s.isin(discontinued_no_replacement)]
-    if not bad.empty:
-        raise ValueError(f"Entrez Gene IDs discontinued without replacement: {bad.unique()[:10].tolist()}")
+    without_replacement = s.isin(discontinued_no_replacement)
+    if on_discontinued == "raise":
+        if without_replacement.any():
+            bad = s[without_replacement]
+            raise ValueError(f"Entrez Gene IDs discontinued without replacement: {bad.unique()[:10].tolist()}")
+    else:  # "drop"
+        s = s[~without_replacement].copy()
 
     in_mapping = s.isin(mapping.index)
     if in_mapping.any():

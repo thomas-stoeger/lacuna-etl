@@ -610,6 +610,18 @@ class RorId(Identifier):
             )
 
 
+class CrossrefFunderDoi(Identifier):
+    """Crossref Funder Registry DOI, e.g. '10.13039/100000002' (the NIH).
+
+    Distinct from `Doi`: it identifies a funding *organization*, not an article,
+    and every entry lives on Crossref's single `10.13039` registrant — so it is
+    typed separately rather than reusing the article-level DOI contract, which a
+    consumer could otherwise be tempted to join against a work's `doi`.
+    """
+    dtype = pd.StringDtype()
+    pattern = r"10\.13039/\d+"
+
+
 class IssnL(Identifier):
     """Linking ISSN in canonical hyphenated form, e.g. '1234-567X'.
 

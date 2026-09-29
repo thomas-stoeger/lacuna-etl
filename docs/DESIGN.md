@@ -173,6 +173,11 @@ downstream repos can join across datasets safely. Canonical forms:
   pandas-backed).
 - **ROR ID** — canonical full URL `https://ror.org/...` (the registry's own
   canonical form).
+- **Crossref Funder Registry DOI** — bare `10.13039/<n>`, the identifier Crossref
+  assigns a funding *organization*. Typed separately from `Doi` rather than
+  reusing it: it is not article-level, so it must never be joined against a
+  work's `doi`, and every entry sits on the single `10.13039` registrant.
+  Carried by `openalex_funders.funders.crossref_funder_doi`.
 - **Wikidata ID** — bare `Q\d+`, URL forms stripped.
 - **Country code** — ISO 3166-1 alpha-2 (and alpha-3 where noted).
 - **OpenAlex IDs** — short form (`W2741809807`, `A...`, `I...`, etc.), URL prefix
@@ -197,12 +202,6 @@ downstream repos can join across datasets safely. Canonical forms:
   transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS *genomic* RefSeq
   accessions interleave letters after the prefix (`NZ_MCBT01000001.1`) and so do
   *not* use this type — columns that can hold those stay plain strings.
-- **RefSeq accession** — `[A-Z]{2}_\d+` with an optional `.<version>` suffix: the
-  curated/predicted transcript and protein accessions `NM/NR/XM/XR/NP/XP/YP`. WGS
-  *genomic* RefSeq accessions interleave letters after the prefix
-  (`NZ_MCBT01000001.1`) and so do *not* use this type — columns that can hold those
-  stay plain strings.
-
 - **MIM number** — OMIM's 6-digit catalog id (`\d{6}`), stored as a string (a
   fixed-width catalog key, not a quantity). Keys the `omim` mapping. Enforced in
   pandas.
@@ -334,11 +333,47 @@ article-level with a `doi_versioned` sibling; `article_ids` is left as the
 verbatim source id list (its plain-string `value` is not version-split).
 
 OpenAlex (21 datasets, streaming): `openalex_works` produces `works`,
-`works_authorships`, `works_topics`, and `works_refs`; the other 20 entities
-(`openalex_authors`, `openalex_sources`, `openalex_institutions`, the topic
+`works_authorships`, `works_topics`, `works_refs`, `works_funders`, and
+`works_awards`; `openalex_awards` produces `awards`, `awards_investigators`, and
+`awards_funded_outputs`; the other 19 entities (`openalex_authors`,
+`openalex_sources`, `openalex_institutions`, `openalex_funders`, the topic
 hierarchy, and the controlled-vocabulary lookups) each produce a single
 similarly named table. `works.doi` is article-level with a `doi_versioned`
 sibling.
+
+`funders` carries two external identifiers alongside the OpenAlex one:
+`ror` (canonical ROR URL, on ~55% of funders — join the `ror` dataset) and
+`crossref_funder_doi` (present on every funder in the current snapshot).
+
+Funding is linked from both ends, and the two sides are not redundant:
+
+- `works_funders` — one row per `(work_id, funder_id)`. The funder credited on
+  the work, whether or not a specific award was identified; join
+  `openalex_funders.funders`. This is the table to use for "which works did
+  funder X fund".
+- `works_awards` — one row per `(work_id, award_id)`, plus the `funder_id` the
+  work record asserts for that award. The funder is carried here rather than
+  left to a join because ~1.7% of award IDs cited on works are absent from the
+  awards entity dump; without it those links would resolve to no funder.
+- `awards_funded_outputs` — one row per `(award_id, work_id)`, from the award
+  side's `funded_outputs` list. Measured against the 2026-03-31 snapshot, its
+  32,514,594 pairs are a strict *subset* of `works_awards`' 60,705,379 — every
+  award-side pair also appears on the work side, and the work side adds 28.2M
+  more. So `works_awards` is the table to use for recall; unioning the two gains
+  nothing. `awards_funded_outputs` is retained as the award-side view (cheaper to
+  scan when starting from an award, and it preserves OpenAlex's own assertion),
+  not as extra coverage. Re-check the subset relation when the snapshot changes;
+  it is a property of the data, not a guarantee of the source.
+
+`awards_investigators` is name-based, not ID-based: OpenAlex asserts no author
+ID on award investigators, only given/family name, a mostly-null `orcid`, and a
+free-text affiliation whose `affiliation_country` is a country *name*, not an
+ISO code. Resolving an investigator to an `openalex_authors` row is a consumer-
+side matching problem this repo does not attempt.
+
+Adding a table to an entity that has already been run does not require
+rewriting its existing output: set `OPENALEX_ONLY_TABLES` to the new table names
+and the run writes only those, keying its restart check off the first of them.
 
 PubTator3 (`ncbi_pubtator3`, streaming): the BioC-XML archives carry NCBI's
 text-mined bio-entity annotations and concept-concept relations over PubMed and
@@ -416,8 +451,7 @@ children keyed by `nlm_unique_id`:
   recoverable from `indexing_coverage.ongoing` but materialized to "present" in
   the per-year explosion). `indexed_years` covers **all** indexing sources;
   consumers filter on `is_medline_indexing` for true MEDLINE indexing.
-  
-Open Targets (6 datasets, streaming per-Parquet-file; one registered pipeline per
+
 Open Targets (55 datasets, streaming per-Parquet-file; one registered pipeline per
 downloaded product, named `opentargets_<product>`): the Platform ships each
 product as a directory of Parquet part files, so the unit of work is one part file
@@ -1069,6 +1103,37 @@ through, into two tables joined on `cluster_id`:
   `knownness`, `num_proteins` / `num_species`, the best-known member
   (`best_known_protein_id`/`_gene`/`_name`), and `key_protein_ids` /
   `key_protein_xrefs`. `cluster_id` / `panther_group` are documented plain strings.
+
+Harmonizome (`harmonizome`, pandas; `depends_on = ncbi_gene_history`; the
+Ma'ayan-lab collection of processed gene–attribute datasets, one set of files per
+collection slug). The pipeline is deliberately conservative: it keeps only
+collections whose edges have a clearly identifiable *Entrez gene → non-gene
+attribute* shape. Gene–gene collections (PPI, kinase–substrate, TF–target), KGs
+whose gene side is in the target column, and collections with no explicit Entrez
+gene-id column are skipped, and the reason is recorded rather than guessed at. Per
+slug, the KG serialization is preferred when its orientation classifies as
+gene → attribute, falling back to the `gene_attribute_edges` file under the same
+test. Large tables are partitioned by collection
+(`<table>/collection_slug=<slug>/part.parquet`). Five tables:
+
+- `collections` — one row per processed collection: name, URL, description,
+  category, measurement/association free text, upstream `resource`, `source`
+  (`allowed_values` ∈ {`kg`, `gene_attributes`}), and edge/background counts.
+- `edges` — one row per gene → attribute edge: `source_entrez_id` (`NcbiGeneId`,
+  required, history-updated), `relation` (from the KG; null for KG-less
+  collections), `target_id` (CURIE-normalized for known ontologies such as
+  GO/HP/MP/CL/MONDO, else the raw string, so a documented plain string),
+  `target_namespace`, `target_label`, and the optional `standardized_value` /
+  binary `threshold`.
+- `genes` — the per-collection background gene universe: `entrez_id`
+  (`NcbiGeneId`), `symbol`, and a collection-specific `secondary_id` with its
+  `secondary_id_type`.
+- `attributes` — the per-collection background attribute universe
+  (`attribute_id`, `attribute_label`, `secondary_descriptor`).
+- `processing_report` — one row per discovered slug, processed or skipped:
+  `source` (`allowed_values` ∈ {`kg`, `gene_attributes`, `skipped`}),
+  `skip_reason`, and edge/gene/attribute counts plus the namespaces and relations
+  present. A `processing_report.tsv` mirror is written alongside for quick reading.
 
 ORCID — the ORCID Public Data File, summaries (`orcid`, streaming). The snapshot is a
 single ~43 GB `*_summaries.tar.gz` of ~20M tiny per-record XML files laid out as

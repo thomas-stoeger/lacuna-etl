@@ -1,11 +1,17 @@
 """
 Transform raw OpenAlex work records into flat Polars DataFrames.
 
-Produces four tables per batch:
+Produces six tables per batch:
   works             - one row per work, scalar fields only
   works_authorships - one row per (work, author) pair
   works_topics      - one row per (work, topic) pair
   works_refs        - one row per (work, cited_work) pair
+  works_funders     - one row per (work, funder) pair
+  works_awards      - one row per (work, award) pair
+
+OpenAlex replaced the older `grants` array on works with two sibling arrays,
+`funders` and `awards`; a work can carry a funder with no identified award, so
+the two link tables are kept separate rather than folded into one.
 
 OpenAlex IDs are stored in short form, e.g. "W2741809807" not the full URL.
 """
@@ -14,10 +20,12 @@ import polars as pl
 
 from lacuna_etl.core.identifiers import (
     OpenAlexAuthorId,
+    OpenAlexAwardId,
     Doi,
     DoiVersioned,
     OpenAlexDomainId,
     OpenAlexFieldId,
+    OpenAlexFunderId,
     OpenAlexSourceId,
     OpenAlexSubfieldId,
     OpenAlexTopicId,
@@ -87,6 +95,17 @@ _TOPICS_SCHEMA = {
 _REFS_SCHEMA = {
     "work_id":      pl.String,
     "ref_work_id":  pl.String,
+}
+
+_FUNDERS_SCHEMA = {
+    "work_id":   pl.String,
+    "funder_id": pl.String,
+}
+
+_AWARDS_SCHEMA = {
+    "work_id":   pl.String,
+    "award_id":  pl.String,
+    "funder_id": pl.String,
 }
 
 
@@ -188,8 +207,41 @@ def _ref_rows(work_id: str, r: dict) -> list[dict]:
     ]
 
 
+def _funder_rows(work_id: str, r: dict) -> list[dict]:
+    # OpenAlex can repeat a funder across a work's award list; de-duplicate so
+    # (work_id, funder_id) stays a grain key.
+    seen = set()
+    rows = []
+    for f in r.get("funders") or []:
+        funder_id = short_id(f.get("id"))
+        if funder_id is None or funder_id in seen:
+            continue
+        seen.add(funder_id)
+        rows.append({"work_id": work_id, "funder_id": funder_id})
+    return rows
+
+
+def _award_rows(work_id: str, r: dict) -> list[dict]:
+    seen = set()
+    rows = []
+    for a in r.get("awards") or []:
+        award_id = short_id(a.get("id"))
+        if award_id is None or award_id in seen:
+            continue
+        seen.add(award_id)
+        rows.append({
+            "work_id":   work_id,
+            "award_id":  award_id,
+            # Carried from the work record so the link resolves to a funder even
+            # when the award itself is absent from the awards entity dump.
+            "funder_id": short_id(a.get("funder_id")),
+        })
+    return rows
+
+
 def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
     works_rows, auth_rows, topic_rows, ref_rows = [], [], [], []
+    funder_rows, award_rows = [], []
     for r in records:
         work_id = short_id(r.get("id"))
         if work_id is None:
@@ -198,11 +250,15 @@ def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
         auth_rows.extend(_authorship_rows(work_id, r))
         topic_rows.extend(_topic_rows(work_id, r))
         ref_rows.extend(_ref_rows(work_id, r))
+        funder_rows.extend(_funder_rows(work_id, r))
+        award_rows.extend(_award_rows(work_id, r))
     return {
-        "works":             pl.DataFrame(works_rows, schema=_WORKS_SCHEMA),
-        "works_authorships": pl.DataFrame(auth_rows,  schema=_AUTHORSHIPS_SCHEMA),
-        "works_topics":      pl.DataFrame(topic_rows, schema=_TOPICS_SCHEMA),
-        "works_refs":        pl.DataFrame(ref_rows,   schema=_REFS_SCHEMA),
+        "works":             pl.DataFrame(works_rows,  schema=_WORKS_SCHEMA),
+        "works_authorships": pl.DataFrame(auth_rows,   schema=_AUTHORSHIPS_SCHEMA),
+        "works_topics":      pl.DataFrame(topic_rows,  schema=_TOPICS_SCHEMA),
+        "works_refs":        pl.DataFrame(ref_rows,    schema=_REFS_SCHEMA),
+        "works_funders":     pl.DataFrame(funder_rows, schema=_FUNDERS_SCHEMA),
+        "works_awards":      pl.DataFrame(award_rows,  schema=_AWARDS_SCHEMA),
     }
 
 
@@ -273,11 +329,24 @@ _REFS_DOC = {
     "ref_work_id": ColumnSpec(identifier=OpenAlexWorkId, required=True, description="Cited work"),
 }
 
+_WORKS_FUNDERS_DOC = {
+    "work_id":   ColumnSpec(identifier=OpenAlexWorkId,   required=True, description="Funded work"),
+    "funder_id": ColumnSpec(identifier=OpenAlexFunderId, required=True, description="Funder credited on the work; join openalex_funders.funders"),
+}
+
+_WORKS_AWARDS_DOC = {
+    "work_id":   ColumnSpec(identifier=OpenAlexWorkId,   required=True, description="Funded work"),
+    "award_id":  ColumnSpec(identifier=OpenAlexAwardId,  required=True, description="Award credited on the work; join openalex_awards.awards"),
+    "funder_id": ColumnSpec(identifier=OpenAlexFunderId, description="Funder of the award, as asserted on the work record"),
+}
+
 TABLES_DOC = {
     "works":             _WORKS_DOC,
     "works_authorships": _AUTHORSHIPS_DOC,
     "works_topics":      _TOPICS_DOC,
     "works_refs":        _REFS_DOC,
+    "works_funders":     _WORKS_FUNDERS_DOC,
+    "works_awards":      _WORKS_AWARDS_DOC,
 }
 
 

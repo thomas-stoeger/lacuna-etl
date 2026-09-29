@@ -1,17 +1,18 @@
 """
 Transform raw OpenAlex award records into flat Polars DataFrames.
 
-Produces two tables per batch:
-  awards               - one row per award
-  awards_investigators - one row per (award, investigator) with role
+Produces three tables per batch:
+  awards                - one row per award
+  awards_investigators  - one row per (award, investigator) with role
+  awards_funded_outputs - one row per (award, funded work) pair
 """
 
 import polars as pl
 
-from lacuna_etl.core.identifiers import OpenAlexAuthorId, OpenAlexAwardId, OpenAlexFunderId
+from lacuna_etl.core.identifiers import Orcid, OpenAlexAwardId, OpenAlexFunderId, OpenAlexWorkId
 from lacuna_etl.core.schema import ColumnSpec
 from lacuna_etl.datasets.openalex._base import OpenAlexEntityPipeline
-from lacuna_etl.datasets.openalex._utils import short_id
+from lacuna_etl.datasets.openalex._utils import short_id, short_orcid
 from lacuna_etl.datasets.registry import register
 
 _AWARDS_SCHEMA = {
@@ -33,10 +34,23 @@ _AWARDS_SCHEMA = {
     "updated_date":         pl.String,
 }
 
+# OpenAlex identifies award investigators by name, not by author ID: the nested
+# objects carry given/family name, an often-null ORCID and a free-text
+# affiliation, with no `id` field to resolve against openalex_authors.
 _INVESTIGATORS_SCHEMA = {
-    "award_id":  pl.String,
-    "author_id": pl.String,
-    "role":      pl.String,
+    "award_id":              pl.String,
+    "role":                  pl.String,
+    "given_name":            pl.String,
+    "family_name":           pl.String,
+    "orcid":                 pl.String,
+    "role_start":            pl.String,
+    "affiliation_name":      pl.String,
+    "affiliation_country":   pl.String,
+}
+
+_FUNDED_OUTPUTS_SCHEMA = {
+    "award_id": pl.String,
+    "work_id":  pl.String,
 }
 
 
@@ -63,31 +77,64 @@ def _award_row(r: dict) -> dict:
     }
 
 
+def _clean(value) -> str | None:
+    """Trim a source string, mapping empty/whitespace-only to null."""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _investigator_row(award_id: str, inv: dict, role: str) -> dict:
+    affiliation = inv.get("affiliation") or {}
+    return {
+        "award_id":            award_id,
+        "role":                role,
+        "given_name":          _clean(inv.get("given_name")),
+        "family_name":         _clean(inv.get("family_name")),
+        "orcid":               short_orcid(inv.get("orcid")),
+        "role_start":          _clean(inv.get("role_start")),
+        "affiliation_name":    _clean(affiliation.get("name")),
+        "affiliation_country": _clean(affiliation.get("country")),
+    }
+
+
 def _investigator_rows(award_id: str, r: dict) -> list[dict]:
     rows = []
-    lead = r.get("lead_investigator")
-    if lead and lead.get("id"):
-        rows.append({"award_id": award_id, "author_id": short_id(lead["id"]), "role": "lead"})
-    co_lead = r.get("co_lead_investigator")
-    if co_lead and co_lead.get("id"):
-        rows.append({"award_id": award_id, "author_id": short_id(co_lead["id"]), "role": "co_lead"})
+    for key, role in (("lead_investigator", "lead"), ("co_lead_investigator", "co_lead")):
+        inv = r.get(key)
+        if inv:
+            rows.append(_investigator_row(award_id, inv, role))
     for inv in r.get("investigators") or []:
-        if inv.get("id"):
-            rows.append({"award_id": award_id, "author_id": short_id(inv["id"]), "role": "investigator"})
+        rows.append(_investigator_row(award_id, inv, "investigator"))
+    return rows
+
+
+def _funded_output_rows(award_id: str, r: dict) -> list[dict]:
+    seen = set()
+    rows = []
+    for work in r.get("funded_outputs") or []:
+        work_id = short_id(work)
+        if work_id is None or work_id in seen:
+            continue
+        seen.add(work_id)
+        rows.append({"award_id": award_id, "work_id": work_id})
     return rows
 
 
 def transform_batch(records: list[dict]) -> dict[str, pl.DataFrame]:
-    award_rows, inv_rows = [], []
+    award_rows, inv_rows, output_rows = [], [], []
     for r in records:
         award_id = short_id(r.get("id"))
         if award_id is None:
             continue
         award_rows.append(_award_row(r))
         inv_rows.extend(_investigator_rows(award_id, r))
+        output_rows.extend(_funded_output_rows(award_id, r))
     return {
-        "awards":               pl.DataFrame(award_rows, schema=_AWARDS_SCHEMA),
-        "awards_investigators": pl.DataFrame(inv_rows,   schema=_INVESTIGATORS_SCHEMA),
+        "awards":                pl.DataFrame(award_rows,  schema=_AWARDS_SCHEMA),
+        "awards_investigators":  pl.DataFrame(inv_rows,    schema=_INVESTIGATORS_SCHEMA),
+        "awards_funded_outputs": pl.DataFrame(output_rows, schema=_FUNDED_OUTPUTS_SCHEMA),
     }
 
 
@@ -111,12 +158,26 @@ _AWARDS_DOC = {
 }
 
 _INVESTIGATORS_DOC = {
-    "award_id":  ColumnSpec(identifier=OpenAlexAwardId,  required=True, description="Award the investigator is associated with"),
-    "author_id": ColumnSpec(identifier=OpenAlexAuthorId, required=True, description="Investigator (OpenAlex author)"),
-    "role":      ColumnSpec(allowed_values={"lead", "co_lead", "investigator"}, description="Investigator role"),
+    "award_id":            ColumnSpec(identifier=OpenAlexAwardId, required=True, description="Award the investigator is associated with"),
+    "role":                ColumnSpec(allowed_values={"lead", "co_lead", "investigator"}, description="Investigator role"),
+    "given_name":          ColumnSpec(description="Investigator given name as asserted by the funder"),
+    "family_name":         ColumnSpec(description="Investigator family name as asserted by the funder"),
+    "orcid":               ColumnSpec(identifier=Orcid, description="Investigator ORCID; sparse — most funders supply names only, and OpenAlex asserts no author ID here"),
+    "role_start":          ColumnSpec(description="Date the investigator took the role, when the funder reports one"),
+    "affiliation_name":    ColumnSpec(description="Free-text affiliation as asserted by the funder (not resolved to an OpenAlex institution)"),
+    "affiliation_country": ColumnSpec(description="Free-text affiliation country as asserted by the funder (a country name, not an ISO code)"),
 }
 
-TABLES_DOC = {"awards": _AWARDS_DOC, "awards_investigators": _INVESTIGATORS_DOC}
+_FUNDED_OUTPUTS_DOC = {
+    "award_id": ColumnSpec(identifier=OpenAlexAwardId, required=True, description="Award that funded the work"),
+    "work_id":  ColumnSpec(identifier=OpenAlexWorkId,  required=True, description="Work attributed to the award; join openalex_works.works"),
+}
+
+TABLES_DOC = {
+    "awards":                _AWARDS_DOC,
+    "awards_investigators":  _INVESTIGATORS_DOC,
+    "awards_funded_outputs": _FUNDED_OUTPUTS_DOC,
+}
 
 
 @register
